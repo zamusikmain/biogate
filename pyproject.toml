@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "biogate"
+version = "0.1.0"
+description = "Local privacy-first 1:1 face verification demo"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "fastapi==0.115.12",
+  "uvicorn[standard]==0.34.2",
+  "pydantic==2.11.4",
+  "pydantic-settings==2.9.1",
+  "python-multipart==0.0.20",
+  "jinja2==3.1.6",
+  "numpy==2.2.5",
+  "opencv-contrib-python==4.10.0.84",
+  "mediapipe==1.0.1",
+  "argon2-cffi==25.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx==0.28.1",
+  "pytest==8.3.5",
+  "pytest-cov==6.1.1",
+  "ruff==0.11.10",
+  "mypy==1.15.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app", "evaluation"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --disable-warnings --maxfail=1"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["cv2.*", "mediapipe.*"]
+ignore_missing_imports = true
+

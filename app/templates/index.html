@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BioGate · Biometric Verification</title><link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="terminal-body">
+  <header class="terminal-header">
+    <a class="brand" href="/"><span class="brand-mark">BG</span><span><strong>BioGate</strong><small data-i18n="secureVerification">Безопасная биометрическая проверка</small></span></a>
+    <div class="header-actions"><span id="health" class="status-dot" data-i18n="checking">Проверка…</span><div class="locale"><button data-lang="ru" class="active">RU</button><button data-lang="en">EN</button></div><a href="/admin" class="ghost-link" data-i18n="admin">Администратор</a></div>
+  </header>
+  <main class="terminal-shell">
+    <section class="terminal-copy">
+      <span class="section-label" data-i18n="identityCheck">ПРОВЕРКА ЛИЧНОСТИ</span><h1 data-i18n="terminalTitle">Подтвердите личность<br>с помощью камеры</h1>
+      <p data-i18n="terminalLead">Локальная проверка лица. Изображения обрабатываются в памяти и не сохраняются.</p>
+      <label class="account-field"><span data-i18n="account">Учетная запись</span><select id="account"><option value="" data-i18n="selectAccount">Выберите пользователя</option></select></label>
+      <button id="start" class="primary-action" data-i18n="startVerification">Начать проверку</button><p class="privacy-note"><span>▣</span><span data-i18n="privacyNote">Камера включается только на время проверки</span></p>
+    </section>
+    <section class="verification-stage">
+      <div id="camera" class="camera-surface"><video id="video" playsinline muted></video><canvas id="overlay"></canvas>
+        <div id="camera-placeholder" class="camera-placeholder"><div class="face-guide"><span></span></div><p data-i18n="cameraReady">Камера готова к запуску</p></div><div class="live-chip"><i></i> LIVE</div>
+        <div id="instruction" class="instruction"><span class="instruction-icon">◎</span><div><small data-i18n="currentStep">ТЕКУЩИЙ ЭТАП</small><strong data-i18n="prepareCamera">Подготовка камеры</strong></div></div>
+      </div>
+      <div class="verification-status"><div class="status-row"><span data-i18n="face">Лицо</span><strong id="face-state">—</strong></div><div class="status-row"><span data-i18n="quality">Качество</span><strong id="quality-state">—</strong></div><div class="status-row"><span data-i18n="liveness">Живое присутствие</span><strong id="live-state">0 / 4</strong></div><div class="progress"><i id="progress"></i></div><ol id="steps" class="challenge-steps"></ol></div>
+      <div id="result" class="terminal-result hidden"></div>
+    </section>
+  </main><div id="toast" role="status"></div><script src="/static/locales.js"></script><script src="/static/app.js" defer></script>
+</body></html>

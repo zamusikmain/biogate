@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BioGate Admin</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/admin-extra.css">
+</head>
+<body class="admin-login-body">
+  <main class="login-shell">
+    <section class="login-card" aria-labelledby="login-title">
+      <header class="login-card-header">
+        <a class="brand" href="/"><span class="brand-mark">BG</span><span><strong>BioGate</strong><small data-i18n="adminPanel">Административная панель</small></span></a>
+        <div class="locale"><button type="button" data-lang="ru" class="active">RU</button><button type="button" data-lang="en">EN</button></div>
+      </header>
+      <div class="login-copy">
+        <span class="section-label">BIOGATE / ADMIN</span>
+        <h1 id="login-title" data-i18n="signIn">Вход в систему</h1>
+        <p data-i18n="adminOnly">Доступ только для администратора</p>
+      </div>
+      <form id="admin-login-form" novalidate>
+        <label for="login-username"><span data-i18n="username">Логин</span><input id="login-username" name="username" autocomplete="username" required autofocus></label>
+        <label for="login-password"><span data-i18n="password">Пароль</span><span class="password-field"><input id="login-password" name="password" type="password" autocomplete="current-password" required><button type="button" id="toggle-password" data-i18n="showPassword">Показать пароль</button></span></label>
+        <p id="login-error" class="login-error" role="alert" aria-live="assertive"></p>
+        <button type="submit" id="login-submit" class="primary-small" data-i18n="login">Войти</button>
+      </form>
+    </section>
+  </main>
+  <script src="/static/locales.js"></script>
+  <script src="/static/admin-login.js" defer></script>
+</body>
+</html>

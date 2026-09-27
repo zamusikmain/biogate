@@ -1,0 +1,96 @@
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.filter-bar input,
+.filter-bar select {
+  min-width: 130px;
+  padding: 9px;
+  border: 1px solid #ccd6de;
+  border-radius: 7px;
+  background: white;
+}
+
+.biometric-empty {
+  padding: 22px;
+  margin-bottom: 16px;
+  border: 1px dashed #b8c6d1;
+  border-radius: 11px;
+  background: #f7fafc;
+}
+
+.biometric-empty h3 { margin: 0 0 6px; }
+.biometric-empty p { color: #637583; margin: 0 0 16px; }
+.confirm-dialog { max-width: 560px; }
+.confirm-dialog p { white-space: pre-line; line-height: 1.55; color: #435564; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+.confirm-actions button { padding: 10px 14px; border: 1px solid #ccd6de; border-radius: 7px; cursor: pointer; }
+.confirm-actions .danger { background: #b4233c; color: white; border-color: #b4233c; }
+button:disabled { cursor: not-allowed; opacity: 1; }
+.enroll-status { padding: 10px 12px; border-radius: 7px; background: #eff5fa; margin-top: 10px; }
+
+/* Primary actions must win over generic card button rules in styles.css. */
+.admin-body button.primary-small,
+.admin-login-body button.primary-small {
+  background: #1d4ed8;
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 1px 2px #0f172a1f;
+}
+
+.admin-body button.primary-small:hover,
+.admin-login-body button.primary-small:hover { background: #1e40af; }
+.admin-body button.primary-small:active,
+.admin-login-body button.primary-small:active { background: #1e3a8a; transform: translateY(1px); }
+.admin-body button.primary-small:disabled,
+.admin-login-body button.primary-small:disabled { background: #64748b; color: #fff; box-shadow: none; }
+
+.admin-body button:focus-visible,
+.admin-body a:focus-visible,
+.admin-body input:focus-visible,
+.admin-body select:focus-visible,
+.admin-body textarea:focus-visible,
+.admin-login-body button:focus-visible,
+.admin-login-body a:focus-visible,
+.admin-login-body input:focus-visible {
+  outline: 3px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+.admin-header-actions { display: flex; align-items: center; gap: 12px; }
+.admin-identity { display: grid; text-align: right; line-height: 1.25; }
+.admin-identity span { color: #718390; font-size: 10px; }
+.admin-identity strong { font-size: 12px; }
+.secondary-button { border: 1px solid #c2ced8; border-radius: 7px; padding: 7px 10px; background: #fff; color: #243746; cursor: pointer; }
+.secondary-button:hover { background: #edf3f7; }
+.secondary-button:active { background: #dfe8ee; }
+
+.admin-login-body { margin: 0; min-height: 100vh; background: #08131e; color: #13202b; display: grid; place-items: center; padding: 24px; }
+.login-shell { width: min(430px, 100%); }
+.login-card { background: #fff; border: 1px solid #d7e0e7; border-radius: 16px; padding: 28px; box-shadow: 0 28px 80px #0007; }
+.login-card-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.login-card .brand { color: #13202b; }
+.login-card .locale { border-color: #cad5de; }
+.login-card .locale button { color: #526878; }
+.login-card .locale button.active { color: #fff; }
+.login-copy { margin: 34px 0 24px; }
+.login-copy h1 { margin: 8px 0 4px; font-size: 28px; letter-spacing: -.02em; }
+.login-copy p { margin: 0; color: #637583; }
+#admin-login-form { display: grid; gap: 16px; }
+#admin-login-form > label { display: grid; gap: 6px; color: #425666; font-size: 12px; font-weight: 600; }
+#admin-login-form input { width: 100%; min-height: 44px; border: 1px solid #b9c7d2; border-radius: 8px; background: #fff; color: #13202b; padding: 10px 12px; }
+.password-field { display: flex; align-items: stretch; }
+.password-field input { border-radius: 8px 0 0 8px !important; }
+.password-field button { min-width: 118px; border: 1px solid #b9c7d2; border-left: 0; border-radius: 0 8px 8px 0; background: #edf3f7; color: #243746; cursor: pointer; padding: 0 10px; }
+.password-field button:hover { background: #dfe8ee; }
+.login-error { min-height: 21px; margin: -4px 0 0; color: #a51d36; font-size: 12px; }
+#login-submit { width: 100%; min-height: 44px; }
+
+@media (max-width: 700px) {
+  .admin-header { align-items: flex-start; gap: 16px; }
+  .admin-header-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .admin-identity { display: none; }
+}
