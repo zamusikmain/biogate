@@ -7,8 +7,9 @@ from fastapi.testclient import TestClient
 from app.core.config import Settings
 from app.db.database import Database
 from app.services.biometrics.detection import FaceDetector
-from app.services.biometrics.embedding import serialize_embedding
+from app.services.biometrics.embedding import select_representatives, serialize_embedding
 from app.services.challenges import ChallengeService, EphemeralCapture
+from app.services.identification import IdentificationService
 from app.services.repository import Repository
 from tests.test_v2 import analysis
 
@@ -22,6 +23,85 @@ def make_challenge(tmp_path: Path, *, debug: bool = False) -> tuple[ChallengeSer
         "pose", "test", "1", serialize_embedding(np.asarray([1.0, 0.0, 0.0], dtype=np.float32)), 3, 3
     )
     return ChallengeService(repository, Settings(db_path=database.path, debug=debug)), repository
+
+
+def test_legacy_centroid_is_migrated_to_one_representative_sample(tmp_path: Path) -> None:
+    database = Database(tmp_path / "legacy-templates.db")
+    database.initialize()
+    repository = Repository(database)
+    repository.create_user("legacy", "Legacy User")
+    centroid = serialize_embedding(np.asarray([1.0, 0.0, 0.0], dtype=np.float32))
+    repository.upsert_template("legacy", "test", "1", centroid, 3, 1)
+    user = repository.get_user("legacy")
+    assert user is not None
+    template = repository.get_template(int(user["id"]))
+    assert template is not None
+
+    # Reinitialization performs the idempotent migration for legacy centroids.
+    database.initialize()
+    samples = repository.template_samples(int(template["id"]))
+    assert len(samples) == 1
+    assert samples[0]["sample_index"] == 0
+    assert samples[0]["embedding"] == centroid
+
+
+def test_representative_sample_replacement_is_atomic_and_ordered(tmp_path: Path) -> None:
+    database = Database(tmp_path / "template-samples.db")
+    database.initialize()
+    repository = Repository(database)
+    repository.create_user("samples", "Sample User")
+    repository.upsert_template(
+        "samples", "test", "1", serialize_embedding(np.asarray([1.0, 0.0], dtype=np.float32)), 2, 1
+    )
+    user = repository.get_user("samples")
+    assert user is not None
+    template = repository.get_template(int(user["id"]))
+    assert template is not None
+    expected = [
+        serialize_embedding(np.asarray([0.0, 1.0], dtype=np.float32)),
+        serialize_embedding(np.asarray([0.8, 0.6], dtype=np.float32)),
+    ]
+    repository.replace_template_samples(int(template["id"]), [(value, 2) for value in expected])
+    samples = repository.template_samples(int(template["id"]))
+    assert [sample["embedding"] for sample in samples] == expected
+
+
+def test_representative_selection_is_bounded_diverse_and_deterministic() -> None:
+    embeddings = [
+        np.asarray([1.0, 0.0, 0.0], dtype=np.float32),
+        np.asarray([0.9999, 0.01, 0.0], dtype=np.float32),
+        np.asarray([0.8, 0.6, 0.0], dtype=np.float32),
+        np.asarray([0.8, 0.0, 0.6], dtype=np.float32),
+    ]
+    first = select_representatives(embeddings, maximum=3)
+    second = select_representatives(embeddings, maximum=3)
+    assert len(first) == 3
+    assert [serialize_embedding(item) for item in first] == [serialize_embedding(item) for item in second]
+
+
+def test_active_representatives_score_but_pending_samples_are_isolated(tmp_path: Path) -> None:
+    database = Database(tmp_path / "multi-score.db")
+    database.initialize()
+    repository = Repository(database)
+    repository.create_user("active", "Active")
+    repository.create_user("pending", "Pending")
+    centroid = serialize_embedding(np.asarray([1.0, 0.0], dtype=np.float32))
+    representative = serialize_embedding(np.asarray([0.0, 1.0], dtype=np.float32))
+    repository.upsert_template("active", "test", "1", centroid, 2, 2, [(centroid, 2), (representative, 2)])
+    active = repository.get_user("active")
+    assert active is not None
+    candidate = repository.get_template(int(active["id"]))
+    assert candidate is not None
+    scoring = IdentificationService(repository, Settings(db_path=database.path))
+    probe = np.asarray([0.0, 1.0], dtype=np.float32)
+    assert scoring.identity_score(probe, candidate) >= 0.999
+    repository.create_biometric_request(
+        {"id": "pending-request", "user_id": int(active["id"]), "candidate_embedding": centroid,
+         "embedding_dimensions": 2, "model_name": "test", "model_version": "1", "sample_count": 1},
+        [(representative, 2)],
+    )
+    assert scoring.identify(probe).decision == "IDENTIFIED"
+    assert len(repository.biometric_request_samples("pending-request")) == 1
 
 
 def calibrated(service: ChallengeService, baseline: float = -0.08) -> EphemeralCapture:
@@ -191,7 +271,7 @@ def test_updating_existing_template_keeps_user_and_writes_audit(client: TestClie
     assert client.post("/api/admin/users/alice/enrollment/photos", files=photos).json()["template_created"] is True
     after = client.app.state.repository.get_user("alice")
     assert before["id"] == after["id"]
-    assert client.app.state.repository.audit_events()[0]["event_type"] == "BIOMETRIC_UPDATED"
+    assert client.app.state.repository.audit_events()[0]["event_type"] == "BIOMETRIC_REPLACED_BY_ADMIN"
 
 
 def test_photo_enrollment_returns_each_invalid_result(client: TestClient) -> None:
@@ -229,3 +309,142 @@ def test_admin_empty_state_and_localized_delete_flow_are_present() -> None:
     assert "/api/admin/users/${encodeURIComponent(selectedUser)}/biometric" in source
     assert "Биометрия удалена" in locales
     assert "Biometric enrollment deleted" in locales
+
+
+def test_admin_qa_regressions_have_explicit_ui_states() -> None:
+    admin = Path("app/static/admin.js").read_text(encoding="utf-8")
+    admin_v3 = Path("app/static/admin-v3.js").read_text(encoding="utf-8")
+    locales = Path("app/static/locales.js").read_text(encoding="utf-8")
+    assert 'data-open-account="${user.id}">${L.t(\'details\')}' in admin
+    assert "openPasswordResetDialog" in admin
+    assert "mode: mode.value" in admin
+    assert "waitingForBiometricResubmission" in admin
+    assert "waitingForBiometricResubmission" in admin_v3
+    assert "restoreSelectedBackup" in admin_v3
+    assert "Ожидается повторная отправка фотографий пользователем" in locales
+    assert "Waiting for the user to resubmit photos" in locales
+
+
+def test_user_language_theme_and_password_policy_controls_are_shared() -> None:
+    template = Path("app/templates/user.html").read_text(encoding="utf-8")
+    user = Path("app/static/user-v3.js").read_text(encoding="utf-8")
+    login = Path("app/templates/login.html").read_text(encoding="utf-8")
+    locales = Path("app/static/v3-locales.js").read_text(encoding="utf-8")
+    assert template.count("data-v3-lang") == 2
+    assert template.count("data-v3-theme") == 3
+    assert "aria-pressed" in locales
+    assert "biogate-language" in locales and "biogate-theme" in locales
+    assert "BioGatePasswordPolicy" in locales
+    assert "V.t(row.method)" in user and "V.t(row.result)" in user
+    assert "V.t(profile.status)" in user
+    assert "show(currentView)" in user
+    assert login.count('data-v3-i18n="passwordRequirements"') == 2
+    for key in (
+        "PASSWORD_TOO_SHORT",
+        "PASSWORD_LOWERCASE_REQUIRED",
+        "PASSWORD_UPPERCASE_REQUIRED",
+        "PASSWORD_DIGIT_REQUIRED",
+        "PASSWORD_SPECIAL_REQUIRED",
+    ):
+        assert locales.count(f"{key}:") >= 2
+
+
+def test_admin_enrollment_method_selector_is_accessible_and_theme_safe() -> None:
+    template = Path("app/templates/admin.html").read_text(encoding="utf-8")
+    css = Path("app/static/admin-extra.css").read_text(encoding="utf-8")
+    admin = Path("app/static/admin.js").read_text(encoding="utf-8")
+    locales = Path("app/static/locales.js").read_text(encoding="utf-8")
+
+    assert 'class="enroll-tabs" role="tablist"' in template
+    assert 'id="tab-webcam" role="tab"' in template
+    assert 'id="tab-upload" role="tab"' in template
+    assert template.count('aria-selected=') >= 2
+    assert '>Через камеру</button>' in template
+    assert '>Загрузить фотографии</button>' in template
+    assert "viaCamera:'Через камеру'" in locales
+    assert "uploadPhotos:'Загрузить фотографии'" in locales
+    assert "viaCamera:'Camera'" in locales
+    assert "uploadPhotos:'Upload photos'" in locales
+    asset_versions = {
+        "styles.css": 8,
+        "admin-extra.css": 11,
+        "v3.css": 8,
+        "locales.js": 11,
+        "admin.js": 12,
+    }
+    for asset, version in asset_versions.items():
+        assert f"/static/{asset}?v={version}" in template
+    assert template.index("styles.css?v=8") < template.index("admin-extra.css?v=11")
+
+    def contrast(foreground: str, background: str) -> float:
+        def luminance(value: str) -> float:
+            channels = [int(value[index : index + 2], 16) / 255 for index in (1, 3, 5)]
+            linear = [
+                channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+                for channel in channels
+            ]
+            return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+        lighter, darker = sorted((luminance(foreground), luminance(background)), reverse=True)
+        return (lighter + 0.05) / (darker + 0.05)
+
+    assert contrast("#ffffff", "#1d4ed8") >= 4.5  # selected
+    assert contrast("#ffffff", "#1e40af") >= 4.5  # selected hover
+    assert contrast("#ffffff", "#1e3a8a") >= 4.5  # selected active
+    assert contrast("#13202b", "#ffffff") >= 4.5  # light unselected
+    assert contrast("#eaf2f8", "#101b25") >= 4.5  # dark unselected
+    selector_css = css[css.index("/* Shared enrollment-method selector") : css.index(".request-gallery")]
+    assert "!important" not in selector_css
+
+    for selector in (
+        ".admin-body .enroll-tabs button {",
+        ".admin-body .enroll-tabs button:hover {",
+        ".admin-body .enroll-tabs button:active {",
+        ".admin-body .enroll-tabs button:focus-visible {",
+        '.admin-body .enroll-tabs button[aria-selected="true"] {',
+        ".admin-body .enroll-tabs button:disabled {",
+    ):
+        assert selector in css
+    assert "background: var(--panel);" in css
+    assert "color: var(--ink);" in css
+    assert "border: 1px solid var(--line);" in css
+    assert ".admin-body dialog {" in css
+    assert "outline: 3px solid var(--accent);" in css
+    assert "background: #1d4ed8;" in css and "color: #fff;" in css
+    theme_css = Path("app/static/v3.css").read_text(encoding="utf-8")
+    assert ':root[data-theme="light"]{color-scheme:light}' in theme_css
+    assert 'data-theme="system"' in theme_css
+
+    assert "function selectEnrollmentMode(mode)" in admin
+    assert "classList.toggle('hidden', !webcamSelected)" in admin
+    assert "classList.toggle('hidden', webcamSelected)" in admin
+    assert "setAttribute('aria-selected', String(webcamSelected))" in admin
+    assert "setAttribute('aria-selected', String(!webcamSelected))" in admin
+    assert "selectEnrollmentMode('upload')" in admin
+    assert "selectEnrollmentMode('webcam')" in admin
+
+
+def test_user_camera_capture_requires_explicit_preview_submit() -> None:
+    source = Path("app/static/user-v3.js").read_text(encoding="utf-8")
+    locales = Path("app/static/v3-locales.js").read_text(encoding="utf-8")
+    capture = source[source.index("async function webcamBiometric") :]
+    before_preview = capture[: capture.index("renderBiometricPreview(photos)")]
+    assert "/api/v3/user/biometric-requests" not in before_preview
+    assert "biometricDraftPhotos = photos" in source
+    assert "if (biometricDraftPhotos.length)" in source
+    assert "biometric-preview-submit" in source
+    assert "biometric-preview-retake" in source
+    assert "biometric-preview-cancel" in source
+    assert "if (biometricSubmitInFlight" in source
+    assert "request.status !== 'PENDING_REVIEW'" in source
+    for text in (
+        "Фотографии готовы",
+        "Проверьте фотографии перед отправкой администратору.",
+        "Отправить на рассмотрение",
+        "Переснять",
+        "Photos are ready",
+        "Review the photos before sending them to the administrator.",
+        "Submit for review",
+        "Retake",
+    ):
+        assert text in locales

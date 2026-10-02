@@ -35,6 +35,34 @@ def aggregate(embeddings: list[NDArray[np.float32]]) -> NDArray[np.float32]:
     return normalize(np.mean(np.stack(embeddings), axis=0).astype(np.float32))
 
 
+def select_representatives(
+    embeddings: list[NDArray[np.float32]], *, maximum: int = 5, duplicate_similarity: float = 0.995
+) -> list[NDArray[np.float32]]:
+    """Select a bounded, deterministic diverse subset without retaining near duplicates."""
+    if maximum < 1:
+        raise ValueError("maximum must be positive")
+    unique: list[NDArray[np.float32]] = []
+    for embedding in embeddings:
+        normalized = normalize(embedding)
+        if not any(cosine_similarity(normalized, existing) >= duplicate_similarity for existing in unique):
+            unique.append(normalized)
+    if not unique:
+        raise ValueError("At least one embedding is required")
+    centroid = aggregate(unique)
+    first = max(range(len(unique)), key=lambda index: (cosine_similarity(unique[index], centroid), -index))
+    selected = [unique.pop(first)]
+    while unique and len(selected) < maximum:
+        index = max(
+            range(len(unique)),
+            key=lambda candidate: (
+                min(1.0 - cosine_similarity(unique[candidate], item) for item in selected),
+                -candidate,
+            ),
+        )
+        selected.append(unique.pop(index))
+    return selected
+
+
 def cosine_similarity(left: NDArray[np.float32], right: NDArray[np.float32]) -> float:
     if left.shape != right.shape:
         raise ValueError("Embedding dimensions do not match")

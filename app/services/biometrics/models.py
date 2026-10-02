@@ -44,3 +44,5 @@ class FrameAnalysis:
     eye_aspect_ratio: float | None
     image_width: int
     image_height: int
+    left_eye_aspect_ratio: float | None = None
+    right_eye_aspect_ratio: float | None = None

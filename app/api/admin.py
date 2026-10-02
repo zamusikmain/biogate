@@ -8,11 +8,13 @@ from fastapi.responses import FileResponse
 
 from app.api.dependencies import (
     get_app_settings,
+    get_identification_service,
     get_pipeline,
     get_repository,
     require_admin_csrf,
     require_admin_session,
 )
+from app.api.event_safety import safe_event_row
 from app.api.routes import ALLOWED_MIME
 from app.core.config import Settings
 from app.schemas.api import (
@@ -25,9 +27,10 @@ from app.schemas.api import (
     UserResponse,
     UserUpdateRequest,
 )
-from app.services.biometrics.embedding import aggregate, serialize_embedding
+from app.services.biometrics.embedding import aggregate, select_representatives, serialize_embedding
 from app.services.biometrics.errors import BiometricError
 from app.services.biometrics.pipeline import BiometricPipeline
+from app.services.identification import IdentificationService
 from app.services.repository import Repository
 
 router = APIRouter(
@@ -54,7 +57,10 @@ async def read_enrollment_photo(photo: UploadFile, settings: Settings) -> bytes:
 
 @router.get("/dashboard")
 def dashboard(repository: Annotated[Repository, Depends(get_repository)]) -> dict[str, Any]:
-    return {"stats": repository.admin_stats(), "recent_events": repository.audit_events(12)}
+    return {
+        "stats": repository.admin_stats(),
+        "recent_events": [safe_event_row(row) for row in repository.audit_events(12)],
+    }
 
 
 @router.post("/users", response_model=UserResponse, status_code=201)
@@ -148,8 +154,10 @@ async def photo_enrollment(
     repository: Annotated[Repository, Depends(get_repository)],
     pipeline: Annotated[BiometricPipeline, Depends(get_pipeline)],
     settings: Annotated[Settings, Depends(get_app_settings)],
+    identification: Annotated[IdentificationService, Depends(get_identification_service)],
 ) -> PhotoEnrollmentResponse:
-    if not repository.get_user(external_id):
+    user = repository.get_user(external_id)
+    if not user:
         raise HTTPException(404, detail={"reason_code": "USER_NOT_FOUND"})
     if not settings.min_enrollment_frames <= len(photos) <= settings.max_enrollment_frames:
         raise HTTPException(422, detail={"reason_code": "INVALID_FRAME_COUNT"})
@@ -177,6 +185,16 @@ async def photo_enrollment(
             results=results,
         )
     template = aggregate(embeddings)
+    representatives = select_representatives(embeddings)
+    duplicate = identification.possible_duplicate(template, excluding_user_id=int(user["id"]))
+    if duplicate:
+        repository.add_security_event(
+            "DUPLICATE_BIOMETRIC_DETECTED",
+            "WARNING",
+            int(user["id"]),
+            {"duplicate_user_id": duplicate.user_id, "similarity": duplicate.similarity},
+        )
+        raise HTTPException(409, detail={"reason_code": "DUPLICATE_BIOMETRIC"})
     repository.upsert_template(
         external_id,
         pipeline.model_name,
@@ -184,6 +202,7 @@ async def photo_enrollment(
         serialize_embedding(template),
         int(template.size),
         len(embeddings),
+        [(serialize_embedding(sample), int(sample.size)) for sample in representatives],
     )
     return PhotoEnrollmentResponse(
         status="ENROLLED",
@@ -229,7 +248,7 @@ def attempt_detail(attempt_id: int, repository: Annotated[Repository, Depends(ge
     for event in repository.audit_events(500):
         metadata = json.loads(event.get("metadata") or "{}")
         if event.get("attempt_id") == attempt_id or metadata.get("attempt_id") == attempt_id:
-            attempt["audit_events"].append(event)
+            attempt["audit_events"].append(safe_event_row(event))
     return attempt
 
 
@@ -278,8 +297,9 @@ def cleanup_snapshots(
 def audit_log(
     repository: Annotated[Repository, Depends(get_repository)],
     limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ) -> list[dict[str, Any]]:
-    return repository.audit_events(limit)
+    return [safe_event_row(row) for row in repository.audit_events(limit, offset)]
 
 
 @router.get("/settings")

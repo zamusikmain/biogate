@@ -7,6 +7,15 @@ def test_health(client: TestClient) -> None:
     assert client.get("/health").json()["status"] == "ok"
 
 
+def test_request_id_and_health_endpoints(client: TestClient) -> None:
+    generated = client.get("/health/live")
+    assert generated.status_code == 200
+    assert generated.headers["X-Request-ID"]
+    supplied = client.get("/health/live", headers={"X-Request-ID": "qa-request-123"})
+    assert supplied.headers["X-Request-ID"] == "qa-request-123"
+    assert client.get("/health/ready").status_code == 200
+
+
 def test_enrollment_and_duplicate(client: TestClient, images: list) -> None:
     first = client.post("/api/enroll", data={"external_id": "alice", "display_name": "Alice"}, files=images)
     assert first.status_code == 201

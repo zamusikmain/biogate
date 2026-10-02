@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     db_path: Path = Path("data/biogate.db")
     model_cache: Path = Path("model_cache")
     verification_threshold: float = Field(default=0.363, ge=-1.0, le=1.0)
+    identification_threshold: float = Field(default=0.363, ge=-1.0, le=1.0)
+    identification_ambiguity_margin: float = Field(default=0.035, ge=0.0, le=0.5)
+    duplicate_biometric_threshold: float = Field(default=0.55, ge=-1.0, le=1.0)
     max_image_size: int = Field(default=5 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024)
     min_enrollment_frames: int = Field(default=3, ge=2, le=10)
     max_enrollment_frames: int = Field(default=5, ge=2, le=10)
@@ -19,7 +22,7 @@ class Settings(BaseSettings):
     min_brightness: float = Field(default=45.0, ge=0, le=255)
     max_brightness: float = Field(default=215.0, ge=0, le=255)
     challenge_ttl_seconds: int = Field(default=120, ge=30, le=600)
-    challenge_cooldown_ms: int = Field(default=550, ge=200, le=3000)
+    challenge_cooldown_ms: int = Field(default=200, ge=200, le=3000)
     head_baseline_frames: int = Field(default=3, ge=2, le=8)
     head_stability_frames: int = Field(default=2, ge=2, le=8)
     head_center_dead_zone: float = Field(default=0.06, ge=0.02, le=0.15)
@@ -29,6 +32,10 @@ class Settings(BaseSettings):
     store_attempt_images: bool = False
     attempt_image_dir: Path = Path("data/attempt_snapshots")
     attempt_image_retention_days: int = Field(default=7, ge=1, le=365)
+    active_image_dir: Path = Path("data/active_images")
+    archive_dir: Path = Path("data/archive")
+    backup_dir: Path = Path("data/backups")
+    active_image_days: int = Field(default=60, ge=60, le=60)
     admin_username: str = ""
     admin_password_hash: SecretStr = SecretStr("")
     session_secret: SecretStr = SecretStr("")
@@ -37,6 +44,17 @@ class Settings(BaseSettings):
     admin_login_max_attempts: int = Field(default=5, ge=2, le=20)
     admin_login_window_seconds: int = Field(default=5 * 60, ge=30, le=60 * 60)
     admin_login_cooldown_seconds: int = Field(default=60, ge=10, le=60 * 60)
+    account_session_ttl_seconds: int = Field(default=8 * 60 * 60, ge=300, le=7 * 24 * 60 * 60)
+    account_session_idle_seconds: int = Field(default=30 * 60, ge=60, le=24 * 60 * 60)
+    password_min_length: int = Field(default=12, ge=12, le=12)
+    password_login_max_attempts: int = Field(default=5, ge=2, le=20)
+    password_login_window_seconds: int = Field(default=5 * 60, ge=30, le=60 * 60)
+    password_login_cooldown_seconds: int = Field(default=5 * 60, ge=30, le=60 * 60)
+    recovery_authorization_ttl_seconds: int = Field(default=5 * 60, ge=60, le=30 * 60)
+    recovery_max_attempts: int = Field(default=5, ge=2, le=20)
+    recovery_window_seconds: int = Field(default=10 * 60, ge=60, le=24 * 60 * 60)
+    allow_face_login: bool = True
+    allow_password_login: bool = True
     debug: bool = False
 
 

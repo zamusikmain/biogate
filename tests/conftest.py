@@ -43,6 +43,12 @@ class FakePipeline:
         frame = self.process_frame(data)
         return FrameAnalysis(frame.embedding, frame.quality, frame.observation, 0.25, 320, 240)
 
+    def analyze_liveness_frame(self, data: bytes, *, analyze_eyes: bool = True) -> FrameAnalysis:
+        return self.analyze_frame(data)
+
+    def extract_embedding(self, data: bytes) -> np.ndarray:
+        return self.process_frame(data).embedding
+
     def verify(self, frames: list[bytes], template: np.ndarray) -> tuple[float, float, LivenessResult]:
         if any(frame == b"noface" for frame in frames):
             raise BiometricError("NO_FACE", "No face")
@@ -56,6 +62,9 @@ def client(tmp_path: Path) -> TestClient:
         db_path=tmp_path / "biogate.db",
         model_cache=tmp_path / "models",
         attempt_image_dir=tmp_path / "snapshots",
+        active_image_dir=tmp_path / "active-images",
+        archive_dir=tmp_path / "archive",
+        backup_dir=tmp_path / "backups",
         min_enrollment_frames=3,
         max_enrollment_frames=5,
         admin_username=TEST_ADMIN_NAME,

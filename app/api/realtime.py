@@ -75,9 +75,21 @@ async def analyze_frame(
     payload = (await read_images([frame], settings))[0]
     started = time.perf_counter()
     try:
-        analysis = pipeline.analyze_frame(payload)
-        elapsed = (time.perf_counter() - started) * 1000
-        return FrameStatusResponse(**challenges.analyze(session_id, analysis, payload, elapsed))
+        action = challenges.expected_action(session_id)
+        analysis = pipeline.analyze_liveness_frame(payload, analyze_eyes=action == "BLINK")
+        analysis_elapsed = (time.perf_counter() - started) * 1000
+        result = challenges.analyze(
+            session_id,
+            analysis,
+            payload,
+            analysis_elapsed,
+            lambda: pipeline.extract_embedding(payload),
+        )
+        if settings.debug:
+            debug = result.setdefault("debug", {})
+            debug["analysisDurationMs"] = round(analysis_elapsed, 2)
+            debug["backendDurationMs"] = round((time.perf_counter() - started) * 1000, 2)
+        return FrameStatusResponse(**result)
     except BiometricError as error:
         raise HTTPException(422, detail={"reason_code": error.reason_code, "message": error.message}) from error
     except KeyError as error:

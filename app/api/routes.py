@@ -78,6 +78,26 @@ def health(request: Request) -> HealthResponse:
     )
 
 
+@router.get("/health/live", include_in_schema=False)
+def health_live() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@router.get("/health/ready", include_in_schema=False)
+def health_ready(request: Request) -> dict[str, str]:
+    try:
+        with request.app.state.repository.db.connect() as connection:
+            database_ok = connection.execute("SELECT 1").fetchone()[0] == 1
+        settings = request.app.state.settings
+        storage_ok = all(path.exists() and path.is_dir() for path in (settings.active_image_dir, settings.archive_dir))
+        model_ok = hasattr(request.app.state, "pipeline")
+    except (AttributeError, OSError, sqlite3.DatabaseError):
+        database_ok = storage_ok = model_ok = False
+    if not (database_ok and storage_ok and model_ok):
+        raise HTTPException(503, detail={"reason_code": "SERVICE_NOT_READY"})
+    return {"status": "ready"}
+
+
 @router.post(
     "/api/enroll",
     response_model=EnrollmentResponse,

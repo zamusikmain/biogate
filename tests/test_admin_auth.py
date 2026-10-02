@@ -52,7 +52,7 @@ def test_admin_page_redirects_and_login_page_is_public(tmp_path: Path) -> None:
     with unauthenticated_client(tmp_path) as client:
         response = client.get("/admin")
         assert response.status_code == 303
-        assert response.headers["location"] == "/admin/login"
+        assert response.headers["location"] == "/"
         assert client.get("/admin/login").status_code == 200
 
 
@@ -68,7 +68,9 @@ def test_correct_login_cookie_and_auth_me(tmp_path: Path) -> None:
         assert "httponly" in cookie and "samesite=strict" in cookie and "path=/" in cookie
         me = client.get("/api/admin/auth/me")
         assert me.status_code == 200 and me.json() == body
-        assert client.get("/admin").status_code == 200
+        admin_page = client.get("/admin", follow_redirects=False)
+        assert admin_page.status_code == 303
+        assert admin_page.headers["location"] == "/"
 
 
 def test_secure_cookie_is_configurable(tmp_path: Path) -> None:
@@ -87,9 +89,9 @@ def test_invalid_username_and_password_have_same_generic_error(tmp_path: Path) -
             json={"username": TEST_ADMIN_NAME, "password": "incorrect-auth-input"},
         )
         assert wrong_username.status_code == wrong_password.status_code == 401
-        assert wrong_username.json() == wrong_password.json() == {
-            "detail": {"reason_code": "INVALID_ADMIN_CREDENTIALS"}
-        }
+        assert (
+            wrong_username.json() == wrong_password.json() == {"detail": {"reason_code": "INVALID_ADMIN_CREDENTIALS"}}
+        )
 
 
 def test_malformed_password_is_rejected_without_echoing_input(tmp_path: Path) -> None:
@@ -188,11 +190,14 @@ def test_public_verification_remains_available_without_admin_session(tmp_path: P
 def test_legacy_admin_operations_cannot_bypass_authentication(tmp_path: Path) -> None:
     with unauthenticated_client(tmp_path) as client:
         files = [("frames", (f"frame-{index}.jpg", b"face", "image/jpeg")) for index in range(3)]
-        assert client.post(
-            "/api/enroll",
-            data={"external_id": "protected", "display_name": "Protected"},
-            files=files,
-        ).status_code == 401
+        assert (
+            client.post(
+                "/api/enroll",
+                data={"external_id": "protected", "display_name": "Protected"},
+                files=files,
+            ).status_code
+            == 401
+        )
         assert client.get("/api/verifications").status_code == 401
         assert client.get("/api/stats").status_code == 401
         assert client.delete("/api/users/protected/biometric").status_code == 401

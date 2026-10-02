@@ -24,12 +24,16 @@ class EyeGeometryService:
         self.landmarker = mp.tasks.vision.FaceLandmarker.create_from_options(options)
 
     def eye_aspect_ratio(self, image: NDArray[np.uint8]) -> float | None:
+        ratios = self.eye_aspect_ratios(image)
+        return float(sum(ratios) / 2.0) if ratios else None
+
+    def eye_aspect_ratios(self, image: NDArray[np.uint8]) -> tuple[float, float] | None:
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         result: Any = self.landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
         if not result.face_landmarks:
             return None
         points = result.face_landmarks[0]
-        return float((self._ear(points, LEFT_EYE) + self._ear(points, RIGHT_EYE)) / 2.0)
+        return self._ear(points, LEFT_EYE), self._ear(points, RIGHT_EYE)
 
     @staticmethod
     def _ear(points: Any, indices: tuple[int, int, int, int, int, int]) -> float:

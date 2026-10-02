@@ -10,7 +10,7 @@ from app.core.config import Settings
 from app.db.database import Database
 from app.services.biometrics.embedding import serialize_embedding
 from app.services.biometrics.models import FaceObservation, FrameAnalysis, QualityResult
-from app.services.challenges import BlinkStateMachine, ChallengeService
+from app.services.challenges import BlinkStateMachine, BlinkTemporalState, ChallengeService, EphemeralCapture
 from app.services.repository import Repository
 
 
@@ -30,12 +30,79 @@ def analysis(yaw: float = 0.0, ear: float = 0.25) -> FrameAnalysis:
 
 def test_blink_requires_open_closed_open() -> None:
     machine = BlinkStateMachine()
-    phase, completed = machine.advance("WAITING_OPEN", 0.25)
+    state = BlinkTemporalState()
+    phase, completed = machine.advance(state, 0.25)
+    assert (phase, completed) == ("WAITING_OPEN", False)
+    phase, completed = machine.advance(state, 0.25)
     assert (phase, completed) == ("WAITING_CLOSED", False)
-    phase, completed = machine.advance(phase, 0.12)
+    phase, completed = machine.advance(state, 0.12)
     assert (phase, completed) == ("WAITING_REOPEN", False)
-    phase, completed = machine.advance(phase, 0.25)
+    machine.advance(state, 0.25)
+    phase, completed = machine.advance(state, 0.25)
     assert (phase, completed) == ("COMPLETE", True)
+
+
+def test_blink_without_reopen_does_not_complete() -> None:
+    machine = BlinkStateMachine()
+    state = BlinkTemporalState()
+    outcomes = [machine.advance(state, ear) for ear in (0.25, 0.25, 0.12)]
+    assert outcomes[-1] == ("WAITING_REOPEN", False)
+
+
+def test_single_bad_frame_is_not_a_blink() -> None:
+    machine = BlinkStateMachine()
+    state = BlinkTemporalState()
+    for ear in (0.25, 0.25, None, 0.25, 0.25):
+        phase, completed = machine.advance(state, ear)
+    assert phase == "WAITING_CLOSED"
+    assert completed is False
+
+
+def test_fast_blink_in_short_consecutive_frames_is_detected() -> None:
+    machine = BlinkStateMachine()
+    state = BlinkTemporalState()
+    outcomes = [machine.advance(state, ear) for ear in (0.24, 0.25, 0.13, 0.24, 0.25)]
+    assert outcomes[-1] == ("COMPLETE", True)
+
+
+def test_blink_requires_both_eyes_when_per_eye_geometry_is_available() -> None:
+    machine = BlinkStateMachine()
+    state = BlinkTemporalState()
+    machine.advance(state, 0.25, 0.25, 0.25)
+    machine.advance(state, 0.25, 0.25, 0.25)
+    phase, completed = machine.advance(state, 0.17, 0.12, 0.22)
+    assert phase == "WAITING_CLOSED"
+    assert completed is False
+
+
+def test_head_turn_invalidates_blink_progress() -> None:
+    machine = BlinkStateMachine()
+    state = BlinkTemporalState()
+    machine.advance(state, 0.25)
+    machine.advance(state, 0.25)
+    machine.advance(state, 0.12, centered=False)
+    machine.advance(state, 0.12, centered=False)
+    machine.advance(state, 0.25)
+    phase, completed = machine.advance(state, 0.25)
+    assert phase == "WAITING_CLOSED"
+    assert completed is False
+
+
+def test_pose_direction_noise_natural_turn_and_fixed_baseline(tmp_path: Path) -> None:
+    database = Database(tmp_path / "pose-temporal.db")
+    database.initialize()
+    repository = Repository(database)
+    service = ChallengeService(repository, Settings(db_path=database.path))
+    capture = EphemeralCapture()
+    for yaw in (0.01, 0.0, -0.01):
+        service._evaluate_pose(capture, "CENTER", yaw)
+    baseline = capture.baseline_yaw
+    assert baseline is not None
+    assert service._evaluate_pose(capture, "TURN_LEFT", baseline + 0.04).matches is False
+    assert service._evaluate_pose(capture, "TURN_LEFT", baseline + 0.18).matches is True
+    assert service._evaluate_pose(capture, "TURN_RIGHT", baseline + 0.18).matches is False
+    assert service._evaluate_pose(capture, "TURN_RIGHT", baseline - 0.18).matches is True
+    assert capture.baseline_yaw == baseline
 
 
 def test_challenge_creation_is_server_owned(client: TestClient, enrolled: None) -> None:
@@ -80,6 +147,31 @@ def test_auto_capture_requires_stability(tmp_path: Path) -> None:
     assert third["current_step"] == 1
 
 
+def test_embedding_is_extracted_only_for_an_accepted_challenge_frame(tmp_path: Path) -> None:
+    database = Database(tmp_path / "lazy-embedding.db")
+    database.initialize()
+    repository = Repository(database)
+    repository.create_user("alice", "Alice")
+    repository.upsert_template(
+        "alice", "test", "1", serialize_embedding(np.asarray([1.0, 0.0], dtype=np.float32)), 2, 1
+    )
+    service = ChallengeService(repository, Settings(db_path=database.path, challenge_cooldown_ms=200))
+    session = service.create("alice")
+    extractions = 0
+
+    def extract() -> np.ndarray:
+        nonlocal extractions
+        extractions += 1
+        return np.asarray([1.0, 0.0], dtype=np.float32)
+
+    service.analyze(session["id"], analysis(), b"frame", embedding_factory=extract)
+    service.analyze(session["id"], analysis(), b"frame", embedding_factory=extract)
+    assert extractions == 0
+    result = service.analyze(session["id"], analysis(), b"frame", embedding_factory=extract)
+    assert result["accepted"] is True
+    assert extractions == 1
+
+
 def test_automatic_verification_session_completes(tmp_path: Path) -> None:
     database = Database(tmp_path / "complete.db")
     database.initialize()
@@ -94,9 +186,8 @@ def test_automatic_verification_session_completes(tmp_path: Path) -> None:
     result = None
     for action in sequence:
         if action == "BLINK":
-            service.analyze(session["id"], analysis(ear=0.25), b"frame")
-            service.analyze(session["id"], analysis(ear=0.12), b"frame")
-            result = service.analyze(session["id"], analysis(ear=0.25), b"frame")
+            for ear in (0.25, 0.25, 0.12, 0.25, 0.25):
+                result = service.analyze(session["id"], analysis(ear=ear), b"frame")
         else:
             yaw = {"CENTER": 0.0, "TURN_LEFT": 0.22, "TURN_RIGHT": -0.22}[action]
             frame_count = 3 if action == "CENTER" else 2

@@ -48,13 +48,28 @@ class BiometricPipeline:
         return FrameResult(embedding, quality, observation)
 
     def analyze_frame(self, data: bytes) -> FrameAnalysis:
+        return self._analyze_frame(data, include_embedding=True)
+
+    def analyze_liveness_frame(self, data: bytes, *, analyze_eyes: bool = True) -> FrameAnalysis:
+        """Run only detection, quality, pose and eye landmarks for the challenge hot path."""
+        return self._analyze_frame(data, include_embedding=False, analyze_eyes=analyze_eyes)
+
+    def extract_embedding(self, data: bytes) -> NDArray[np.float32]:
+        """Extract an embedding only for a frame accepted by the liveness state machine."""
+        return self.process_frame(data).embedding
+
+    def _analyze_frame(
+        self, data: bytes, *, include_embedding: bool, analyze_eyes: bool = True
+    ) -> FrameAnalysis:
         image = self.decode(data)
         observation = self.detector.detect_one(image)
         quality = self.quality.evaluate(image, observation)
         if not quality.accepted:
             raise BiometricError(quality.reason_code, "Image quality check failed")
-        embedding = self.embedder.extract(image, observation)
-        ear = self.eye_geometry.eye_aspect_ratio(image)
+        embedding = self.embedder.extract(image, observation) if include_embedding else np.empty(0, dtype=np.float32)
+        ratios = self.eye_geometry.eye_aspect_ratios(image) if analyze_eyes else None
+        left_ear, right_ear = ratios if ratios else (None, None)
+        ear = float((left_ear + right_ear) / 2.0) if left_ear is not None and right_ear is not None else None
         return FrameAnalysis(
             embedding=embedding,
             quality=quality,
@@ -62,6 +77,8 @@ class BiometricPipeline:
             eye_aspect_ratio=ear,
             image_width=int(image.shape[1]),
             image_height=int(image.shape[0]),
+            left_eye_aspect_ratio=left_ear,
+            right_eye_aspect_ratio=right_ear,
         )
 
     def create_template(self, frames: list[bytes]) -> tuple[NDArray[np.float32], float]:

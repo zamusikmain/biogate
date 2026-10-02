@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BioGate V3</title>
+  <link rel="stylesheet" href="/static/v3.css">
+  <link rel="stylesheet" href="/static/face-guidance.css?v=4">
+</head>
+<body class="v3-login">
+  <main class="v3-login-shell">
+    <section class="v3-login-info">
+      <div class="v3-brand"><span class="v3-logo">BG</span><span><strong>BioGate</strong><small data-v3-i18n="subtitle"></small></span></div>
+      <h1 data-v3-i18n="productTitle"></h1>
+      <p data-v3-i18n="localFirst"></p>
+    </section>
+    <section class="v3-login-panel">
+      <div class="v3-top-actions">
+        <div class="segmented"><button type="button" data-v3-lang="ru">RU</button><button type="button" data-v3-lang="en">EN</button></div>
+        <div class="segmented"><button type="button" data-v3-theme="light">☀</button><button type="button" data-v3-theme="dark">◐</button><button type="button" data-v3-theme="system">◉</button></div>
+      </div>
+      <section id="password-panel">
+        <h2 data-v3-i18n="passwordLogin"></h2>
+        <form id="password-form" class="v3-form">
+          <label><span data-v3-i18n="login"></span><input name="login" autocomplete="username" required autofocus></label>
+          <label><span data-v3-i18n="password"></span><input name="password" type="password" autocomplete="current-password" required></label>
+          <p class="v3-error" id="login-error"></p>
+          <button class="v3-primary" type="submit" data-v3-i18n="signIn"></button>
+        </form>
+        <button id="forgot" class="v3-secondary" type="button" data-v3-i18n="forgot"></button>
+        <div class="v3-divider" data-v3-i18n="or"></div>
+        <button id="face-login" class="v3-primary" type="button" data-v3-i18n="faceLogin"></button>
+      </section>
+      <section id="recovery-panel" class="v3-hidden">
+        <h2 data-v3-i18n="recovery"></h2>
+        <form id="recovery-start" class="v3-form">
+          <label><span data-v3-i18n="login"></span><input name="login" required></label>
+          <button class="v3-primary" data-v3-i18n="continue"></button>
+          <button id="recovery-cancel" type="button" class="v3-secondary" data-v3-i18n="cancel"></button>
+        </form>
+      </section>
+      <section id="camera-panel" class="v3-hidden">
+        <div class="face-guidance" id="camera-stage"><video id="camera-video" playsinline muted></video></div>
+        <div class="face-actions">
+          <button id="camera-retry" type="button" class="v3-primary v3-hidden" data-v3-i18n="faceRetry"></button>
+          <button id="camera-cancel" type="button" class="v3-secondary" data-v3-i18n="passwordLogin"></button>
+        </div>
+      </section>
+      <section id="reset-panel" class="v3-hidden">
+        <h2 data-v3-i18n="resetPassword"></h2>
+        <p class="v3-error" id="reset-error"></p>
+        <form id="reset-form" class="v3-form">
+          <label><span data-v3-i18n="newPassword"></span><input name="password" type="password" required></label>
+          <label><span data-v3-i18n="confirmPassword"></span><input name="confirmation" type="password" required></label>
+          <p class="password-requirements" data-v3-i18n="passwordRequirements"></p>
+          <button class="v3-primary" data-v3-i18n="save"></button>
+        </form>
+      </section>
+      <section id="forced-panel" class="v3-hidden">
+        <h2 data-v3-i18n="mustChange"></h2>
+        <p class="v3-error" id="forced-error"></p>
+        <form id="forced-form" class="v3-form">
+          <label><span data-v3-i18n="currentPassword"></span><input name="current" type="password" required></label>
+          <label><span data-v3-i18n="newPassword"></span><input name="password" type="password" required></label>
+          <label><span data-v3-i18n="confirmPassword"></span><input name="confirmation" type="password" required></label>
+          <p class="password-requirements" data-v3-i18n="passwordRequirements"></p>
+          <button class="v3-primary" data-v3-i18n="save"></button>
+        </form>
+      </section>
+    </section>
+  </main>
+  <script src="/static/v3-locales.js?v=7"></script><script src="/static/face-guidance-locales.js?v=5"></script><script src="/static/face-guidance.js?v=5"></script>
+  <script src="/static/login-v3.js?v=5" defer></script>
+</body>
+</html>

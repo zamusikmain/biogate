@@ -2,7 +2,9 @@ import json
 import secrets
 import statistics
 import threading
+import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -12,28 +14,74 @@ import numpy as np
 from numpy.typing import NDArray
 
 from app.core.config import Settings
-from app.services.biometrics.embedding import aggregate, cosine_similarity, deserialize_embedding
+from app.services.biometrics.embedding import aggregate
 from app.services.biometrics.models import FrameAnalysis
+from app.services.identification import IdentificationService
 from app.services.repository import Repository
 
 ACTIONS = ("CENTER", "TURN_LEFT", "TURN_RIGHT", "BLINK")
 
 
+@dataclass
+class BlinkTemporalState:
+    phase: str = "WAITING_OPEN"
+    consecutive_frames: int = 0
+
+    def reset(self) -> None:
+        self.phase = "WAITING_OPEN"
+        self.consecutive_frames = 0
+
+
 class BlinkStateMachine:
-    def __init__(self, open_threshold: float = 0.21, closed_threshold: float = 0.16):
+    def __init__(
+        self,
+        open_threshold: float = 0.21,
+        closed_threshold: float = 0.16,
+        confirmation_frames: int = 2,
+        closed_confirmation_frames: int = 1,
+    ):
         self.open_threshold = open_threshold
         self.closed_threshold = closed_threshold
+        self.confirmation_frames = confirmation_frames
+        self.closed_confirmation_frames = closed_confirmation_frames
 
-    def advance(self, phase: str, eye_aspect_ratio: float | None) -> tuple[str, bool]:
+    def advance(
+        self,
+        state: BlinkTemporalState,
+        eye_aspect_ratio: float | None,
+        left_eye_aspect_ratio: float | None = None,
+        right_eye_aspect_ratio: float | None = None,
+        *,
+        centered: bool = True,
+    ) -> tuple[str, bool]:
+        if state.phase == "COMPLETE":
+            return state.phase, True
+        if not centered:
+            state.reset()
+            return state.phase, False
         if eye_aspect_ratio is None:
-            return phase, False
-        if phase == "WAITING_OPEN" and eye_aspect_ratio >= self.open_threshold:
-            return "WAITING_CLOSED", False
-        if phase == "WAITING_CLOSED" and eye_aspect_ratio <= self.closed_threshold:
-            return "WAITING_REOPEN", False
-        if phase == "WAITING_REOPEN" and eye_aspect_ratio >= self.open_threshold:
-            return "COMPLETE", True
-        return phase, False
+            state.consecutive_frames = 0
+            return state.phase, False
+        left = eye_aspect_ratio if left_eye_aspect_ratio is None else left_eye_aspect_ratio
+        right = eye_aspect_ratio if right_eye_aspect_ratio is None else right_eye_aspect_ratio
+        eyes_open = left >= self.open_threshold and right >= self.open_threshold
+        eyes_closed = left <= self.closed_threshold and right <= self.closed_threshold
+        expected = eyes_open if state.phase in {"WAITING_OPEN", "WAITING_REOPEN"} else eyes_closed
+        required_frames = (
+            self.closed_confirmation_frames if state.phase == "WAITING_CLOSED" else self.confirmation_frames
+        )
+        state.consecutive_frames = state.consecutive_frames + 1 if expected else 0
+        if state.consecutive_frames < required_frames:
+            return state.phase, False
+        state.consecutive_frames = 0
+        if state.phase == "WAITING_OPEN":
+            state.phase = "WAITING_CLOSED"
+        elif state.phase == "WAITING_CLOSED":
+            state.phase = "WAITING_REOPEN"
+        else:
+            state.phase = "COMPLETE"
+            return state.phase, True
+        return state.phase, False
 
 
 @dataclass
@@ -46,6 +94,19 @@ class EphemeralCapture:
     inference_time_ms: float = 0.0
     baseline_yaw: float | None = None
     baseline_samples: list[float] = field(default_factory=list)
+    blink: BlinkTemporalState = field(default_factory=BlinkTemporalState)
+    frame_count: int = 0
+    first_frame_at: float | None = None
+
+    def record_frame(self) -> None:
+        self.frame_count += 1
+        self.first_frame_at = self.first_frame_at or time.perf_counter()
+
+    def effective_fps(self) -> float | None:
+        if self.first_frame_at is None or self.frame_count < 2:
+            return None
+        elapsed = time.perf_counter() - self.first_frame_at
+        return self.frame_count / elapsed if elapsed > 0 else None
 
 
 @dataclass(frozen=True)
@@ -58,9 +119,10 @@ class PoseEvaluation:
 class ChallengeService:
     """Server-owned challenge state; biometric samples remain memory-only."""
 
-    def __init__(self, repository: Repository, settings: Settings):
+    def __init__(self, repository: Repository, settings: Settings, identification: IdentificationService | None = None):
         self.repository = repository
         self.settings = settings
+        self.identification = identification or IdentificationService(repository, settings)
         self.blink = BlinkStateMachine()
         self._captures: dict[str, EphemeralCapture] = {}
         self._lock = threading.RLock()
@@ -91,8 +153,21 @@ class ChallengeService:
         self.repository.add_audit("VERIFICATION_STARTED", int(user["id"]), "STARTED", {"challenge_id": session_id})
         return session
 
+    def expected_action(self, session_id: str) -> str:
+        session = self.repository.get_session(session_id)
+        if not session:
+            raise KeyError("CHALLENGE_NOT_FOUND")
+        sequence = json.loads(session["expected_sequence"])
+        index = int(session["current_step"])
+        return str(sequence[index]) if index < len(sequence) else "COMPLETE"
+
     def analyze(
-        self, session_id: str, analysis: FrameAnalysis, frame_data: bytes, inference_time_ms: float = 0.0
+        self,
+        session_id: str,
+        analysis: FrameAnalysis,
+        frame_data: bytes,
+        inference_time_ms: float = 0.0,
+        embedding_factory: Callable[[], NDArray[np.float32]] | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             session = self.repository.get_session(session_id)
@@ -111,11 +186,23 @@ class ChallengeService:
                 raise ValueError("INVALID_CHALLENGE_SEQUENCE")
             action = str(sequence[index])
             capture = self._captures.setdefault(session_id, EphemeralCapture())
+            capture.record_frame()
             capture.inference_time_ms += inference_time_ms
             accepted = False
             feedback = "HOLD_STILL"
             if action == "BLINK":
-                phase, accepted = self.blink.advance(str(session["blink_phase"]), analysis.eye_aspect_ratio)
+                centered = (
+                    capture.baseline_yaw is not None
+                    and abs(analysis.observation.yaw_proxy - capture.baseline_yaw)
+                    <= self.settings.head_center_dead_zone
+                )
+                phase, accepted = self.blink.advance(
+                    capture.blink,
+                    analysis.eye_aspect_ratio,
+                    analysis.left_eye_aspect_ratio,
+                    analysis.right_eye_aspect_ratio,
+                    centered=centered,
+                )
                 self.repository.update_session_progress(session_id, index, phase, None)
                 feedback = f"BLINK_{phase}"
                 detected_pose = "BLINK"
@@ -135,7 +222,7 @@ class ChallengeService:
                 accepted = capture.stability_count >= required and self._cooldown_elapsed(session, now)
                 feedback = "STABLE" if matches else "ADJUST_POSE"
             if accepted:
-                capture.embeddings.append(analysis.embedding)
+                capture.embeddings.append(embedding_factory() if embedding_factory else analysis.embedding)
                 capture.quality_scores.append(analysis.quality.score)
                 if capture.snapshot is None and action == "CENTER":
                     capture.snapshot = frame_data
@@ -180,8 +267,7 @@ class ChallengeService:
         if not template_record or len(capture.embeddings) != len(sequence):
             self._reject(session, "INVALID_CHALLENGE_SEQUENCE", "FAILED")
             raise ValueError("INVALID_CHALLENGE_SEQUENCE")
-        template = deserialize_embedding(template_record["embedding"], template_record["embedding_dimensions"])
-        similarity = cosine_similarity(aggregate(capture.embeddings), template)
+        similarity = self.identification.identity_score(aggregate(capture.embeddings), template_record)
         quality = float(np.mean(capture.quality_scores))
         result = "VERIFIED" if similarity >= self.settings.verification_threshold else "REJECTED"
         reason = "MATCH" if result == "VERIFIED" else "FACE_MISMATCH"
@@ -342,6 +428,7 @@ class ChallengeService:
         stability_count: int,
     ) -> dict[str, Any]:
         x, y, width, height = analysis.observation.box
+        capture = self._captures.get(session_id)
         response: dict[str, Any] = {
             "challenge_id": session_id,
             "sequence": sequence,
@@ -374,5 +461,7 @@ class ChallengeService:
                 "qualityPassed": analysis.quality.accepted,
                 "stabilityCount": stability_count,
                 "poseAccepted": accepted,
+                "analyzedFrames": capture.frame_count if capture else 0,
+                "effectiveFps": round(capture.effective_fps() or 0.0, 2) if capture else 0.0,
             }
         return response
