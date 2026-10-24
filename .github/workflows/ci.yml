@@ -37,7 +37,7 @@ jobs:
           python -m ruff format --check .
 
       - name: Mypy
-        run: python -m mypy --strict app scripts
+        run: python -m mypy --strict app scripts evaluation
 
       - name: JavaScript syntax
         shell: pwsh
