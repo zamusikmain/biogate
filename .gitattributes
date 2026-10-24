@@ -1,0 +1,10 @@
+* text=auto eol=lf
+# cmd.exe needs CRLF line endings in batch files.
+*.bat text eol=crlf
+*.onnx binary
+*.task binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.webp binary
+*.zip binary
