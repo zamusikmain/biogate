@@ -29,9 +29,7 @@ def analysis(yaw: float = 0.0, ear: float = 0.25) -> FrameAnalysis:
     )
 
 
-def run_challenge(
-    service: ChallengeService, database: Database
-) -> tuple[list[float], float, bool]:
+def run_challenge(service: ChallengeService, database: Database) -> tuple[list[float], float, bool]:
     session = service.create("synthetic")
     sequence = json.loads(session["expected_sequence"])
     durations: list[float] = []

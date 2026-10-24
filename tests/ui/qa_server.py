@@ -23,10 +23,15 @@ def serve() -> None:
     with TemporaryDirectory(prefix="biogate-guidance-") as directory:
         root = Path(directory)
         settings = Settings(
-            _env_file=None, db_path=root / "qa.db", model_cache=root / "models",
-            active_image_dir=root / "active", archive_dir=root / "archive",
-            backup_dir=root / "backups", attempt_image_dir=root / "snapshots",
-            admin_username="", admin_password_hash=SecretStr(""),
+            _env_file=None,
+            db_path=root / "qa.db",
+            model_cache=root / "models",
+            active_image_dir=root / "active",
+            archive_dir=root / "archive",
+            backup_dir=root / "backups",
+            attempt_image_dir=root / "snapshots",
+            admin_username="",
+            admin_password_hash=SecretStr(""),
             session_secret=SecretStr(secrets.token_urlsafe(48)),
         )
         app = create_app(settings, FakePipeline())  # type: ignore[arg-type]

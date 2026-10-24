@@ -58,9 +58,7 @@ class BiometricPipeline:
         """Extract an embedding only for a frame accepted by the liveness state machine."""
         return self.process_frame(data).embedding
 
-    def _analyze_frame(
-        self, data: bytes, *, include_embedding: bool, analyze_eyes: bool = True
-    ) -> FrameAnalysis:
+    def _analyze_frame(self, data: bytes, *, include_embedding: bool, analyze_eyes: bool = True) -> FrameAnalysis:
         image = self.decode(data)
         observation = self.detector.detect_one(image)
         quality = self.quality.evaluate(image, observation)

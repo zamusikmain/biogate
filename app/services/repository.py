@@ -517,8 +517,13 @@ class Repository:
         return self.get_user_by_id(user_id) or {}
 
     def list_accounts(
-        self, limit: int = 50, offset: int = 0, search: str | None = None,
-        status: str | None = None, role: str | None = None, biometric: str | None = None,
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        search: str | None = None,
+        status: str | None = None,
+        role: str | None = None,
+        biometric: str | None = None,
     ) -> list[dict[str, Any]]:
         conditions = ["1=1"]
         params: list[Any] = []
@@ -548,7 +553,7 @@ class Repository:
                    u.last_login_at,u.last_login_method,u.password_changed_at,u.password_enabled,
                    u.face_enabled,u.biometric_recovery_enabled,bt.id AS biometric_template_id
                    FROM users u LEFT JOIN biometric_templates bt ON bt.user_id=u.id
-                   WHERE {' AND '.join(conditions)} ORDER BY u.created_at DESC LIMIT ? OFFSET ?""",  # noqa: S608
+                   WHERE {" AND ".join(conditions)} ORDER BY u.created_at DESC LIMIT ? OFFSET ?""",  # noqa: S608
                 (*params, limit, offset),
             ).fetchall()
         return [dict(row) for row in rows]
@@ -616,7 +621,10 @@ class Repository:
                     "ACTIVE": "ACCOUNT_ENABLED" if before.get("status") == "DISABLED" else "ACCOUNT_UNBLOCKED",
                 }.get(str(status), event_type)
             self._audit(
-                conn, event_type, user_id, "SUCCESS",
+                conn,
+                event_type,
+                user_id,
+                "SUCCESS",
                 {"changed_fields": sorted(updates), "reason": values.get("reason", "")},
             )
         if updates.get("status") in {"BLOCKED", "DISABLED"} or (
@@ -1156,8 +1164,13 @@ class Repository:
         }
 
     def update_biometric_request(
-        self, request_id: str, status: str, admin_comment: str = "", reviewed_by: int | None = None,
-        *, expected_status: str | None = None,
+        self,
+        request_id: str,
+        status: str,
+        admin_comment: str = "",
+        reviewed_by: int | None = None,
+        *,
+        expected_status: str | None = None,
     ) -> bool:
         parameters = (status, admin_comment, reviewed_by, utc_now() if reviewed_by else None, utc_now(), request_id)
         with self.db.write() as conn:
@@ -1355,15 +1368,9 @@ class Repository:
             )
             # Event rows survive as pseudonymous counters: identifiers, network metadata and free text go.
             erased = json.dumps({"erased_subject": True, "erasure_id": erasure_id})
-            conn.execute(
-                "UPDATE verification_attempts SET claimed_external_id='ERASED' WHERE user_id=?", (user_id,)
-            )
-            conn.execute(
-                "UPDATE verification_sessions SET claimed_external_id='ERASED' WHERE user_id=?", (user_id,)
-            )
-            conn.execute(
-                "UPDATE access_events SET client_address='',user_agent='' WHERE user_id=?", (user_id,)
-            )
+            conn.execute("UPDATE verification_attempts SET claimed_external_id='ERASED' WHERE user_id=?", (user_id,))
+            conn.execute("UPDATE verification_sessions SET claimed_external_id='ERASED' WHERE user_id=?", (user_id,))
+            conn.execute("UPDATE access_events SET client_address='',user_agent='' WHERE user_id=?", (user_id,))
             conn.execute("UPDATE audit_events SET metadata=? WHERE user_id=?", (erased, user_id))
             conn.execute("UPDATE security_events SET metadata=?,note='' WHERE user_id=?", (erased, user_id))
             for key in ("best_user_id", "second_user_id", "duplicate_user_id"):

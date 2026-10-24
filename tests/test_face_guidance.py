@@ -17,7 +17,11 @@ def test_javascript_runtime_regressions(suite: str) -> None:
     assert node, "Node.js is required for the frontend runtime regression tests"
     result = subprocess.run(  # noqa: S603
         [node, "--test", str(ROOT / "tests/ui" / suite)],
-        cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
     )
     assert result.returncode == 0, result.stdout + result.stderr
 
@@ -44,7 +48,12 @@ def test_face_login_geometry_is_observational_and_center_remains_server_owned(cl
     assert result.status_code == 200
     body = result.json()
     assert body["face_geometry"] == {
-        "x": 10, "y": 10, "width": 100, "height": 100, "image_width": 320, "image_height": 240,
+        "x": 10,
+        "y": 10,
+        "width": 100,
+        "height": 100,
+        "image_width": 320,
+        "image_height": 240,
     }
     assert body["accepted"] is False
     assert body["observed_action"] == "CALIBRATING"
