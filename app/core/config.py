@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     min_sharpness: float = Field(default=55.0, ge=0)
     min_brightness: float = Field(default=45.0, ge=0, le=255)
     max_brightness: float = Field(default=215.0, ge=0, le=255)
+    # Extra limits for frames that become a stored template (enrollment and biometric updates).
+    enrollment_max_yaw: float = Field(default=0.35, ge=0.05, le=1.0)
+    enrollment_max_roll_degrees: float = Field(default=20.0, ge=1.0, le=45.0)
     challenge_ttl_seconds: int = Field(default=120, ge=30, le=600)
     challenge_cooldown_ms: int = Field(default=200, ge=200, le=3000)
     head_baseline_frames: int = Field(default=3, ge=2, le=8)

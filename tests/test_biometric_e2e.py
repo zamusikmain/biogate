@@ -59,6 +59,9 @@ class ObservationAdapter:
         analysis = self._analysis(identity, pose, "OPEN")
         return FrameResult(analysis.embedding, analysis.quality, analysis.observation)
 
+    def process_enrollment_frame(self, data: bytes) -> FrameResult:
+        return self.process_frame(data)
+
     def analyze_frame(self, data: bytes) -> FrameAnalysis:
         identity, pose, eyes = self._parts(data)
         return self._analysis(identity, pose, eyes)

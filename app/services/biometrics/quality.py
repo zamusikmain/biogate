@@ -1,8 +1,37 @@
+import math
+
 import cv2
 import numpy as np
 from numpy.typing import NDArray
 
 from app.services.biometrics.models import FaceObservation, QualityResult
+
+
+def head_roll_degrees(raw: NDArray[np.float32]) -> float:
+    """Signed in-plane tilt of the line through the two YuNet eye landmarks (indexes 4-7), in degrees."""
+    dx, dy = float(raw[6] - raw[4]), float(raw[7] - raw[5])
+    angle = math.degrees(math.atan2(dy, dx))
+    # Eye order is not guaranteed; fold the angle into [-90, 90].
+    if angle > 90:
+        angle -= 180
+    elif angle < -90:
+        angle += 180
+    return angle
+
+
+class EnrollmentPoseGate:
+    """Head-pose limits applied only to frames that become part of a stored template."""
+
+    def __init__(self, max_yaw: float, max_roll_degrees: float):
+        self.max_yaw = max_yaw
+        self.max_roll_degrees = max_roll_degrees
+
+    def evaluate(self, face: FaceObservation) -> str | None:
+        if abs(face.yaw_proxy) > self.max_yaw:
+            return "HEAD_TURNED"
+        if abs(head_roll_degrees(face.raw)) > self.max_roll_degrees:
+            return "HEAD_TILTED"
+        return None
 
 
 class QualityService:

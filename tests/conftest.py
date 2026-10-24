@@ -39,6 +39,11 @@ class FakePipeline:
         quality = QualityResult(True, 0.91, 100.0, 128.0, "OK")
         return FrameResult(np.asarray([1.0, 0.0, 0.0], dtype=np.float32), quality, observation)
 
+    def process_enrollment_frame(self, data: bytes) -> FrameResult:
+        if data == b"turned":
+            raise BiometricError("HEAD_TURNED", "Head turned")
+        return self.process_frame(data)
+
     def analyze_frame(self, data: bytes) -> FrameAnalysis:
         frame = self.process_frame(data)
         return FrameAnalysis(frame.embedding, frame.quality, frame.observation, 0.25, 320, 240)
