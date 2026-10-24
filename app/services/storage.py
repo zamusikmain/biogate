@@ -97,8 +97,10 @@ class EvidenceStorage:
         if erased is None:
             return None
         targets = [
-            (self.settings.archive_dir if photo["storage_state"] == "ARCHIVED" else self.settings.active_image_dir,
-             str(photo["storage_key"]))
+            (
+                self.settings.archive_dir if photo["storage_state"] == "ARCHIVED" else self.settings.active_image_dir,
+                str(photo["storage_key"]),
+            )
             for photo in erased["photos"]
         ]
         targets.extend((self.settings.attempt_image_dir, name) for name in erased["snapshots"])

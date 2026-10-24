@@ -70,6 +70,7 @@ V3_RUNTIME_SETTINGS = (
     "recovery_max_attempts",
 )
 
+
 def _client(request: Request) -> tuple[str, str]:
     return (request.client.host if request.client else "local", request.headers.get("user-agent", "")[:300])
 
@@ -562,19 +563,17 @@ def admin_update_account(
     current = repository.get_user_by_id(user_id)
     if not current:
         raise HTTPException(404, detail={"reason_code": "USER_NOT_FOUND"})
-    removes_active_admin = current.get("role") == "ADMIN" and current.get("status") == "ACTIVE" and (
-        payload.role == "USER" or payload.status in {"BLOCKED", "DISABLED"}
+    removes_active_admin = (
+        current.get("role") == "ADMIN"
+        and current.get("status") == "ACTIVE"
+        and (payload.role == "USER" or payload.status in {"BLOCKED", "DISABLED"})
     )
     if removes_active_admin and repository.active_admin_count(excluding_user_id=user_id) == 0:
         raise HTTPException(409, detail={"reason_code": "LAST_ACTIVE_ADMIN_REQUIRED"})
     enabled_password = (
-        payload.password_enabled
-        if payload.password_enabled is not None
-        else bool(current.get("password_enabled", 1))
+        payload.password_enabled if payload.password_enabled is not None else bool(current.get("password_enabled", 1))
     )
-    enabled_face = (
-        payload.face_enabled if payload.face_enabled is not None else bool(current.get("face_enabled", 1))
-    )
+    enabled_face = payload.face_enabled if payload.face_enabled is not None else bool(current.get("face_enabled", 1))
     if payload.status in {None, "ACTIVE"} and not enabled_password and not enabled_face:
         raise HTTPException(409, detail={"reason_code": "ACCOUNT_AUTH_METHOD_REQUIRED"})
     try:
@@ -1061,9 +1060,7 @@ def _evidence_response(
         raise HTTPException(404, detail={"reason_code": "PHOTO_NOT_FOUND"}) from error
     if record.get("integrity_status") == "INTEGRITY_FAILED" or not evidence.verify_integrity(photo_id):
         raise HTTPException(409, detail={"reason_code": "EVIDENCE_INTEGRITY_FAILED"})
-    suffix = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}.get(
-        str(record["mime_type"]), ".bin"
-    )
+    suffix = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}.get(str(record["mime_type"]), ".bin")
     date_part = str(record["created_at"])[:10].replace("-", "")
     safe_name = f"biogate_evidence_{date_part}_{photo_id[:12]}{suffix}"
     if download:

@@ -96,8 +96,15 @@ def test_active_representatives_score_but_pending_samples_are_isolated(tmp_path:
     probe = np.asarray([0.0, 1.0], dtype=np.float32)
     assert scoring.identity_score(probe, candidate) >= 0.999
     repository.create_biometric_request(
-        {"id": "pending-request", "user_id": int(active["id"]), "candidate_embedding": centroid,
-         "embedding_dimensions": 2, "model_name": "test", "model_version": "1", "sample_count": 1},
+        {
+            "id": "pending-request",
+            "user_id": int(active["id"]),
+            "candidate_embedding": centroid,
+            "embedding_dimensions": 2,
+            "model_name": "test",
+            "model_version": "1",
+            "sample_count": 1,
+        },
         [(representative, 2)],
     )
     assert scoring.identify(probe).decision == "IDENTIFIED"
@@ -315,7 +322,7 @@ def test_admin_qa_regressions_have_explicit_ui_states() -> None:
     admin = Path("app/static/admin.js").read_text(encoding="utf-8")
     admin_v3 = Path("app/static/admin-v3.js").read_text(encoding="utf-8")
     locales = Path("app/static/locales.js").read_text(encoding="utf-8")
-    assert 'data-open-account="${user.id}">${L.t(\'details\')}' in admin
+    assert "data-open-account=\"${user.id}\">${L.t('details')}" in admin
     assert "openPasswordResetDialog" in admin
     assert "mode: mode.value" in admin
     assert "waitingForBiometricResubmission" in admin
@@ -358,9 +365,9 @@ def test_admin_enrollment_method_selector_is_accessible_and_theme_safe() -> None
     assert 'class="enroll-tabs" role="tablist"' in template
     assert 'id="tab-webcam" role="tab"' in template
     assert 'id="tab-upload" role="tab"' in template
-    assert template.count('aria-selected=') >= 2
-    assert '>Через камеру</button>' in template
-    assert '>Загрузить фотографии</button>' in template
+    assert template.count("aria-selected=") >= 2
+    assert ">Через камеру</button>" in template
+    assert ">Загрузить фотографии</button>" in template
     assert "viaCamera:'Через камеру'" in locales
     assert "uploadPhotos:'Загрузить фотографии'" in locales
     assert "viaCamera:'Camera'" in locales
@@ -380,8 +387,7 @@ def test_admin_enrollment_method_selector_is_accessible_and_theme_safe() -> None
         def luminance(value: str) -> float:
             channels = [int(value[index : index + 2], 16) / 255 for index in (1, 3, 5)]
             linear = [
-                channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
-                for channel in channels
+                channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4 for channel in channels
             ]
             return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
 

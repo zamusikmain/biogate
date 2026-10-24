@@ -237,6 +237,7 @@ The real `.env`, SQLite files, model binaries, evidence images, archives, and ba
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m ruff format --check .
 .\.venv\Scripts\python.exe -m mypy --strict app scripts
 Get-ChildItem app\static -Filter *.js | ForEach-Object { node --check $_.FullName }
 ```
