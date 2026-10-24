@@ -171,6 +171,8 @@ Preview responses use the recorded image MIME inline. Explicit downloads reuse t
 - surviving audit, security, access and verification rows lose the link to the person: `user_id` becomes `NULL`, metadata is replaced by `{"erased_subject": true, "erasure_id": ...}`, IP address, user agent and claimed login are cleared, and candidate references in face-identification events are nulled;
 - one `ACCOUNT_ERASED` audit record keeps the erasure ID, administrator ID, reason and file counts. Do not put personal data into the reason.
 
+The legacy `DELETE /api/admin/users/{external_id}` performs the same erasure (recorded with reason `LEGACY_ADMIN_DELETE`).
+
 A file that cannot be removed is reported in the response and raises a critical `ERASURE_FILES_REMAINING` security event.
 
 **Existing backups are not rewritten.** A backup is a sealed, hash-verified snapshot, so a person erased today still exists in older ZIP files. The policy is:
