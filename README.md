@@ -24,7 +24,7 @@
 3. **Templates change only through review.** A new template is checked for duplicates against other people, waits for an ADMIN, and replaces the old one atomically on approval; the old one keeps working until then.
 4. **Privacy is a feature, not a footnote.** Everything stays on the local disk, templates never leave the API, passwords and tokens are stored only as hashes, retention is configurable, and one request erases a person's account, templates, samples and photos while keeping only pseudonymous audit records.
 
-**Honest status.** FAR/FRR have not been measured; the 0.363 threshold is the published SFace default, not tuned on any dataset. Liveness is a demonstration, not certified PAD. Face recognition and liveness are covered by automated tests only through a fake pipeline and must be checked manually with a camera.
+**Honest status.** FAR/FRR were measured only on the public LFW pairs benchmark (see [Accuracy](#accuracy-on-lfw)); there are no numbers for real webcam images or for 1:N identification. The 0.363 threshold is the published SFace default; on LFW it lands at FAR ≈ 0.1 %. Liveness is a demonstration, not certified PAD. Face recognition and liveness are covered by automated tests only through a fake pipeline and must be checked manually with a camera.
 
 ## Screenshots
 
@@ -108,7 +108,7 @@ The decision uses both:
 
 Below threshold is `UNKNOWN`. A close Top-1/Top-2 result is `AMBIGUOUS`. Neither receives a session. A confidently recognized blocked or disabled account produces its corresponding policy decision, evidence, access event, and security alert without creating a session. Candidate identities are retained only in protected security metadata and are not exposed in the public failure response.
 
-`0.363` remains the established SFace cosine threshold. No FAR, FRR, or accuracy is claimed. Any real 1:N deployment requires representative evaluation using its population, cameras, lighting, and attack model.
+`0.363` remains the established SFace cosine threshold. Its 1:1 FAR/FRR on LFW is listed under [Accuracy](#accuracy-on-lfw); no 1:N accuracy is claimed. Any real 1:N deployment requires representative evaluation using its population, cameras, lighting, and attack model.
 
 ## Password authentication and recovery
 
@@ -195,27 +195,26 @@ Backups made before the versioned manifest are detected as legacy and rejected w
 
 The ADMIN Event Log includes deterministic, event-based risk classification. It is not ML and does not inspect a face, appearance, demographic attributes, emotion, or inferred human behavior. Centralized rules evaluate only technical security events in bounded windows: repeated failed password logins, unknown-face attempts, biometric/liveness failures, recovery abuse, blocked/disabled account attempts, and excessive password resets. Results are `LOW`, `MEDIUM`, `HIGH`, or `CRITICAL`, with a machine-readable reason and localized RU/EN presentation. When no rule escalates an event, no extra risk block clutters Event Details.
 
-## Offline biometric benchmark
+## Accuracy on LFW
 
-[`scripts/evaluate_biometrics.py`](scripts/evaluate_biometrics.py) is an explicit developer utility. It never runs with the application, reads no production database/evidence automatically, sends nothing to the network, and never changes production configuration. Supply a consented non-production dataset arranged as one directory per identity:
+1:1 verification on the public **LFW View 2** protocol (6,000 pairs: 3,000 genuine, 3,000 impostor, 10 folds), with the production YuNet detector, alignment and SFace model. Full protocol, licences and limitations: [docs/EVALUATION.md](docs/EVALUATION.md); raw results: [docs/evaluation/](docs/evaluation/).
 
-```text
-dataset/
-  person_001/1.jpg
-  person_001/2.jpg
-  person_002/1.jpg
-  person_002/2.jpg
-```
+| SFace, pairs where both faces were found (5,999) | Value |
+|---|---|
+| EER | 0.80 % |
+| At the production threshold 0.363 | FAR 0.067 % (2/3,000), FRR 1.53 % (46/2,999) |
+| Threshold for FAR <= 1 % | 0.295 → FRR 0.77 % |
+| Threshold for FAR <= 0.1 % | 0.364 → FRR 1.53 % |
+| Faces not found by YuNet | 1 of 7,701 images (one genuine pair) |
 
-Example:
+These numbers describe LFW news photos, not webcam images or 1:N identification; FAR below 0.1 % cannot be measured with 3,000 impostor pairs. Reproduce with:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\evaluate_biometrics.py --dataset C:\path\to\consented-dataset --threshold 0.40 --output-json report.json --output-csv thresholds.csv
+.\.venv\Scripts\python.exe -m evaluation.lfw
+.\.venv\Scripts\python.exe -m evaluation.run --model sface
 ```
 
-The tool reuses the production detector/alignment/SFace embedding and cosine-similarity services. It reports identities, images, genuine/impostor pair counts and distributions, false accepts/rejects for requested thresholds, Top-1/Top-2 margin statistics where meaningful, and always marks the current `0.363` production threshold separately. It does not modify that threshold.
-
-This is local offline evaluation on the supplied dataset. Results depend on that dataset and are not a certified biometric evaluation, production-grade FAR/FRR evidence, or PAD certification.
+The tool never reads the application database, evidence or `.env`, and never changes the production threshold. An ArcFace R100 comparison (lower error, 12x slower, non-commercial weights) is in [docs/EVALUATION.md](docs/EVALUATION.md#model-comparison-policy-acquired-same-pairs-same-detector-and-alignment).
 
 ## OpenAPI
 
@@ -279,11 +278,11 @@ The real `.env`, SQLite files, model binaries, evidence images, archives, and ba
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe -m ruff check .
 .\.venv\Scripts\python.exe -m ruff format --check .
-.\.venv\Scripts\python.exe -m mypy --strict app scripts
+.\.venv\Scripts\python.exe -m mypy --strict app scripts evaluation
 Get-ChildItem app\static -Filter *.js | ForEach-Object { node --check $_.FullName }
 ```
 
-The tests cover preserved V2 behavior, head-pose semantics, authentication/CSRF/RBAC, migration, identification threshold and ambiguity behavior, blocked accounts, throttling, the unified password policy, temporary/permanent password flows, USER/ADMIN localization and themes, biometric request revision/resubmission, evidence archival/integrity, versioned backup validation, deterministic risk rules, offline benchmark metrics, and OpenAPI filtering.
+The tests cover preserved V2 behavior, head-pose semantics, authentication/CSRF/RBAC, migration, identification threshold and ambiguity behavior, blocked accounts, throttling, the unified password policy, temporary/permanent password flows, USER/ADMIN localization and themes, biometric request revision/resubmission, evidence archival/integrity, versioned backup validation, deterministic risk rules, evaluation metrics, and OpenAPI filtering.
 
 ## Face capture guidance
 
