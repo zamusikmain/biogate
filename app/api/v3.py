@@ -29,6 +29,7 @@ from app.api.event_safety import safe_event_row
 from app.core.config import Settings
 from app.schemas.v3 import (
     AccountCreateRequest,
+    AccountErasureRequest,
     AccountUpdateRequest,
     AdminNoteRequest,
     AdminPasswordResetRequest,
@@ -747,6 +748,25 @@ def admin_remove_biometric(
     return {"removed": deleted}
 
 
+@router.delete("/admin/accounts/{user_id}")
+def admin_erase_account(
+    user_id: int,
+    payload: AccountErasureRequest,
+    admin: Annotated[AccountSession, Depends(require_account_admin)],
+    evidence: Annotated[EvidenceStorage, Depends(get_evidence_storage)],
+) -> dict[str, Any]:
+    """Permanently erase a person: account, templates, samples, evidence files and identifying event data."""
+    if user_id == admin.user_id:
+        raise HTTPException(409, detail={"reason_code": "CANNOT_ERASE_OWN_ACCOUNT"})
+    try:
+        result = evidence.erase_account(user_id, admin_id=admin.user_id, reason=payload.reason)
+    except ValueError as error:
+        raise HTTPException(409, detail={"reason_code": str(error)}) from error
+    if result is None:
+        raise HTTPException(404, detail={"reason_code": "USER_NOT_FOUND"})
+    return result
+
+
 @router.get("/admin/dashboard")
 def v3_dashboard(
     _: Annotated[AccountSession, Depends(require_account_admin)],
@@ -796,7 +816,9 @@ def v3_settings(
     settings: Annotated[Settings, Depends(get_app_settings)],
 ) -> dict[str, Any]:
     result = {name: getattr(settings, name) for name in V3_RUNTIME_SETTINGS}
-    result.update({"require_liveness": True, "active_image_days": 60, "permanent_archive": True})
+    result.update(
+        {"require_liveness": True, "active_image_days": settings.active_image_days, "permanent_archive": True}
+    )
     return result
 
 

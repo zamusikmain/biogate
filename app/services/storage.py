@@ -91,6 +91,35 @@ class EvidenceStorage:
             moved += 1
         return moved
 
+    def erase_account(self, user_id: int, *, admin_id: int, reason: str) -> dict[str, Any] | None:
+        erasure_id = str(uuid.uuid4())
+        erased = self.repository.erase_account(user_id, erasure_id=erasure_id, admin_id=admin_id, reason=reason)
+        if erased is None:
+            return None
+        targets = [
+            (self.settings.archive_dir if photo["storage_state"] == "ARCHIVED" else self.settings.active_image_dir,
+             str(photo["storage_key"]))
+            for photo in erased["photos"]
+        ]
+        targets.extend((self.settings.attempt_image_dir, name) for name in erased["snapshots"])
+        removed = 0
+        failed = 0
+        for root, name in targets:
+            path = (root / name).resolve()
+            if path.parent != root.resolve():
+                failed += 1
+                continue
+            try:
+                path.unlink(missing_ok=True)
+                removed += 1
+            except OSError:
+                failed += 1
+        if failed:
+            self.repository.add_security_event(
+                "ERASURE_FILES_REMAINING", "CRITICAL", None, {"erasure_id": erasure_id, "files": failed}
+            )
+        return {"erased": True, "erasure_id": erasure_id, "files_removed": removed, "files_failed": failed}
+
     def verify_integrity(self, photo_id: str) -> bool:
         record = self.repository.get_evidence_photo(photo_id)
         if not record:

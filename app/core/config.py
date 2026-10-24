@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     active_image_dir: Path = Path("data/active_images")
     archive_dir: Path = Path("data/archive")
     backup_dir: Path = Path("data/backups")
-    active_image_days: int = Field(default=60, ge=60, le=60)
+    active_image_days: int = Field(default=60, ge=1, le=3650)
     admin_username: str = ""
     admin_password_hash: SecretStr = SecretStr("")
     session_secret: SecretStr = SecretStr("")

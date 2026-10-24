@@ -19,7 +19,8 @@ It is designed for Windows and CPU execution with SQLite. It has no required clo
 - Duplicate-biometric detection before a candidate template can be approved.
 - User biometric update workflow: `PENDING_REVIEW`, `APPROVED`, `REJECTED`, `REVISION_REQUIRED`, and `CANCELLED`.
 - Selected evidence photos for access and biometric-request events; no continuous video.
-- Active evidence storage for exactly 60 days followed by permanent local archival.
+- Active evidence storage for a configurable period (`BIOGATE_ACTIVE_IMAGE_DAYS`, default 60) followed by local archival.
+- Complete erasure of a person on request: account, templates, samples, evidence files and identifying event data.
 - SHA-256 evidence integrity checks, security alerts, and protected photo endpoints.
 - Access events, security events, audit history, notifications, account sessions, user timelines, and internal administrator notes.
 - ADMIN live access monitor over SSE, CSV export, backup creation/validation, and explicitly confirmed restore with a safety backup.
@@ -115,11 +116,29 @@ The existing active template remains usable until an administrator approves the 
 
 BioGate stores selected evidence images for successful and denied face flows, unknown/ambiguous faces, blocked/disabled attempts, recovery, and biometric requests. It never stores continuous webcam video.
 
-Each record has a UUID photo ID and UUID filename, links to account/access/request where applicable, MIME, byte size, SHA-256, storage state, and integrity state. Files begin in `data/active_images/`. Once older than 60 days, an idempotent archival job moves them to `data/archive/` and retains them permanently. This permanent retention has significant privacy and storage implications; operators must define a lawful, proportionate policy for their environment.
+Each record has a UUID photo ID and UUID filename, links to account/access/request where applicable, MIME, byte size, SHA-256, storage state, and integrity state. Files begin in `data/active_images/`. Once older than `BIOGATE_ACTIVE_IMAGE_DAYS` (default 60, allowed 1–3650), the archival job, started by an ADMIN from the console, moves them to `data/archive/`. Archived files stay until the person is erased (see below). Operators must still define a lawful, proportionate retention policy for their environment.
 
 An integrity mismatch becomes `INTEGRITY_FAILED` and creates both audit and critical security records. BioGate does not silently repair altered evidence.
 
 Preview responses use the recorded image MIME inline. Explicit downloads reuse the same authorization, path, and integrity checks but set an attachment disposition with a bounded filename such as `biogate_evidence_20260929_ab12cd34ef56.jpg`; internal UUID storage names are not renamed. Sensitive V3/admin responses and evidence use `Cache-Control: no-store, private`.
+
+## Erasing a person
+
+`DELETE /api/v3/admin/accounts/{user_id}` with `{"reason": "...", "confirmation": "ERASE"}` permanently removes a person. It is ADMIN-only, refuses to erase the caller's own account or the last active ADMIN, and runs in one SQLite transaction with `secure_delete` enabled:
+
+- the account, sessions, reset authorizations, notifications, admin notes, biometric requests and history are deleted;
+- the active template and every template and request sample (embeddings) are deleted;
+- evidence photos linked to the person, their access events or their biometric requests are deleted from `data/active_images/` and `data/archive/`, together with legacy attempt snapshots;
+- surviving audit, security, access and verification rows lose the link to the person: `user_id` becomes `NULL`, metadata is replaced by `{"erased_subject": true, "erasure_id": ...}`, IP address, user agent and claimed login are cleared, and candidate references in face-identification events are nulled;
+- one `ACCOUNT_ERASED` audit record keeps the erasure ID, administrator ID, reason and file counts. Do not put personal data into the reason.
+
+A file that cannot be removed is reported in the response and raises a critical `ERASURE_FILES_REMAINING` security event.
+
+**Existing backups are not rewritten.** A backup is a sealed, hash-verified snapshot, so a person erased today still exists in older ZIP files. The policy is:
+
+1. After an erasure, delete every backup that is no longer needed for recovery.
+2. Keep the remaining backups only for a fixed, short period, then delete them.
+3. If such a backup is ever restored, repeat every erasure performed after the backup date before the system is used again (the `ACCOUNT_ERASED` audit entries list them).
 
 ## Backup and restore
 
@@ -217,7 +236,7 @@ Run:
 
 ## Configuration
 
-See `.env.example`. Important V3 values include identification threshold/margin, duplicate threshold, account absolute/idle session timeouts, password policy and throttling, recovery limits, protected storage roots, and login-method switches. Active evidence retention is deliberately fixed at 60 days. Liveness remains mandatory for face login and biometric recovery.
+See `.env.example`. Important V3 values include identification threshold/margin, duplicate threshold, account absolute/idle session timeouts, password policy and throttling, recovery limits, protected storage roots, and login-method switches. Active evidence retention is set with `BIOGATE_ACTIVE_IMAGE_DAYS`. Liveness remains mandatory for face login and biometric recovery.
 
 The real `.env`, SQLite files, model binaries, evidence images, archives, and backups are excluded from Git.
 
@@ -263,4 +282,4 @@ not validate physical camera quality, recognition or liveness; these require man
 
 BioGate V3 stores aggregate biometric templates, access metadata, selected evidence, biometric-request images, unknown/ambiguous evidence, permanent archives, sessions, and audit/security metadata. It does not store continuous video, plaintext passwords, plaintext reset/session tokens, password hashes in APIs, templates in APIs, or raw embeddings in logs.
 
-SQLite and local filesystem storage are intended for a single local instance, not horizontal scaling. In-memory active liveness state is lost on restart and the challenge must be repeated. SSE monitor interruption does not affect authentication. The bundled liveness is not certified PAD, 1:N performance is not asserted without representative evaluation, and permanent evidence retention must be treated as a deliberate privacy decision.
+SQLite and local filesystem storage are intended for a single local instance, not horizontal scaling. In-memory active liveness state is lost on restart and the challenge must be repeated. SSE monitor interruption does not affect authentication. The bundled liveness is not certified PAD, 1:N performance is not asserted without representative evaluation, and archived evidence is kept until the person is erased, which must be treated as a deliberate privacy decision. Templates, evidence and backups are stored unencrypted on the local disk.
