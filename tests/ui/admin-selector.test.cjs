@@ -42,6 +42,89 @@ test('admin enrollment selector changes the real pane and accessible selection',
   assert.equal(cameraStops, 1);
 });
 
+function loadEraseDialog() {
+  const source = fs.readFileSync('app/static/admin.js', 'utf8');
+  const start = source.indexOf('function eraseConfirmationValid(reason, word)');
+  const dialogStart = source.indexOf('function openEraseAccountDialog(user)', start);
+  const end = source.indexOf('\n}\n', dialogStart) + 2;
+  assert.ok(start >= 0 && dialogStart > start && end > dialogStart, 'erase dialog helpers must be present');
+  const field = () => ({ value: '', disabled: false, oninput: null });
+  const fields = { '[data-erase-reason]': field(), '[data-erase-word]': field(), '[data-erase-confirm]': field() };
+  const dialog = {
+    innerHTML: '', returnValue: '', listeners: {}, opened: false,
+    querySelector: selector => fields[selector],
+    addEventListener(name, handler) { this.listeners[name] = handler; },
+    showModal() { this.opened = true; },
+  };
+  const calls = { api: [], toast: [], show: [] };
+  const context = {
+    $: id => (id === 'erase-account-dialog' ? dialog : null),
+    document: { createElement: () => dialog, body: { appendChild: () => {} } },
+    esc: value => String(value), tr: key => key, L: { t: key => key }, accountIdentity: user => user.full_name,
+    jsonOptions: (method, body) => ({ method, body }),
+    api: async (path, options) => { calls.api.push({ path, options }); return { erased: true }; },
+    toast: message => calls.toast.push(message), show: view => calls.show.push(view),
+    selectedV3UserId: 7,
+  };
+  vm.runInNewContext(source.slice(start, end), context);
+  context.openEraseAccountDialog({ id: 7, full_name: 'Person' });
+  return { context, dialog, fields, calls };
+}
+
+test('erase person stays disabled until a reason and the exact word ERASE are entered', async () => {
+  const { context, dialog, fields, calls } = loadEraseDialog();
+  assert.equal(dialog.opened, true);
+  assert.match(dialog.innerHTML, /data-erase-confirm disabled/);
+  const reason = fields['[data-erase-reason]'];
+  const word = fields['[data-erase-word]'];
+  const confirm = fields['[data-erase-confirm]'];
+  reason.value = 'subject request'; reason.oninput();
+  word.value = 'erase'; word.oninput();
+  assert.equal(confirm.disabled, true);
+  word.value = 'ERASE'; word.oninput();
+  assert.equal(confirm.disabled, false);
+  reason.value = '   '; reason.oninput();
+  assert.equal(confirm.disabled, true);
+  assert.equal(context.eraseConfirmationValid('x', 'ERASE'), true);
+
+  dialog.returnValue = 'confirm';
+  await dialog.listeners.close();
+  assert.equal(calls.api.length, 0, 'whitespace reason must not call the API');
+});
+
+test('confirmed erase calls the V3 endpoint and returns to the refreshed user list', async () => {
+  const { context, dialog, fields, calls } = loadEraseDialog();
+  fields['[data-erase-reason]'].value = ' subject request ';
+  fields['[data-erase-word]'].value = 'ERASE';
+  dialog.returnValue = 'confirm';
+  await dialog.listeners.close();
+  // Objects created inside the vm context have a different prototype, so compare plain JSON.
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.api)), [{
+    path: '/api/v3/admin/accounts/7',
+    options: { method: 'DELETE', body: { reason: 'subject request', confirmation: 'ERASE' } },
+  }]);
+  assert.deepEqual(calls.toast, ['personErased']);
+  assert.deepEqual(calls.show, ['users']);
+  assert.equal(context.selectedV3UserId, null);
+
+  const cancelled = loadEraseDialog();
+  cancelled.fields['[data-erase-reason]'].value = 'x';
+  cancelled.fields['[data-erase-word]'].value = 'ERASE';
+  cancelled.dialog.returnValue = 'cancel';
+  await cancelled.dialog.listeners.close();
+  assert.equal(cancelled.calls.api.length, 0);
+});
+
+test('erase person action is on the user card and localized', () => {
+  const source = fs.readFileSync('app/static/admin.js', 'utf8');
+  const locales = fs.readFileSync('app/static/locales.js', 'utf8');
+  assert.match(source, /<button data-user-erase class="danger">\$\{L\.t\('erasePerson'\)\}<\/button>/);
+  assert.match(source, /\[data-user-erase\]'\)\.onclick = \(\) => openEraseAccountDialog\(user\)/);
+  assert.match(locales, /erasePerson:'Удалить человека'/);
+  assert.match(locales, /erasePerson:'Erase person'/);
+  assert.match(locales, /CANNOT_ERASE_OWN_ACCOUNT:'Нельзя удалить собственный аккаунт\.'/);
+});
+
 test('password reset cancellation bypasses submit validation and reset API', () => {
   const source = fs.readFileSync('app/static/admin.js', 'utf8');
   const start = source.indexOf('function openPasswordResetDialog(userId)');
