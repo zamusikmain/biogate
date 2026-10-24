@@ -90,13 +90,6 @@ class Repository:
             self._audit(conn, event, int(user["id"]), "SUCCESS", {"status": values["status"]})
         return self.get_user(external_id)
 
-    def delete_user(self, external_id: str) -> bool:
-        user = self.get_user(external_id)
-        if not user:
-            return False
-        with self.db.write() as conn:
-            return bool(conn.execute("DELETE FROM users WHERE id=?", (user["id"],)).rowcount)
-
     def upsert_template(
         self,
         external_id: str,
@@ -1325,7 +1318,9 @@ class Repository:
         with self.db.write() as conn:
             conn.execute("UPDATE evidence_photos SET integrity_status=? WHERE id=?", (status, photo_id))
 
-    def erase_account(self, user_id: int, *, erasure_id: str, admin_id: int, reason: str) -> dict[str, Any] | None:
+    def erase_account(
+        self, user_id: int, *, erasure_id: str, admin_id: int | None, reason: str
+    ) -> dict[str, Any] | None:
         """Remove a person and every biometric artefact; keep only pseudonymous event skeletons.
 
         Returns the evidence and snapshot file names the caller must remove from disk once the

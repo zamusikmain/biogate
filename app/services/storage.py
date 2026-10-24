@@ -91,7 +91,7 @@ class EvidenceStorage:
             moved += 1
         return moved
 
-    def erase_account(self, user_id: int, *, admin_id: int, reason: str) -> dict[str, Any] | None:
+    def erase_account(self, user_id: int, *, admin_id: int | None, reason: str) -> dict[str, Any] | None:
         erasure_id = str(uuid.uuid4())
         erased = self.repository.erase_account(user_id, erasure_id=erasure_id, admin_id=admin_id, reason=reason)
         if erased is None:
