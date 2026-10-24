@@ -155,6 +155,11 @@ class BackupRestoreRequest(BaseModel):
     confirmation: str = Field(pattern=r"^RESTORE$")
 
 
+class AccountErasureRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+    confirmation: str = Field(pattern=r"^ERASE$")
+
+
 class AdminSettingsRequest(BaseModel):
     allow_face_login: bool | None = None
     allow_password_login: bool | None = None
