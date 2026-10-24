@@ -3,6 +3,7 @@ import subprocess
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.test_v3 import v3_admin_login
@@ -10,11 +11,12 @@ from tests.test_v3 import v3_admin_login
 ROOT = Path(__file__).parents[1]
 
 
-def test_javascript_runtime_regressions() -> None:
+@pytest.mark.parametrize("suite", ["face-guidance.test.cjs", "admin-selector.test.cjs"])
+def test_javascript_runtime_regressions(suite: str) -> None:
     node = shutil.which("node")
-    assert node, "Node.js is required for FaceGuidance runtime regression tests"
+    assert node, "Node.js is required for the frontend runtime regression tests"
     result = subprocess.run(  # noqa: S603
-        [node, "--test", str(ROOT / "tests/ui/face-guidance.test.cjs")],
+        [node, "--test", str(ROOT / "tests/ui" / suite)],
         cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
     )
     assert result.returncode == 0, result.stdout + result.stderr
