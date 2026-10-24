@@ -33,6 +33,9 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["app", "evaluation"]
 
+[tool.hatch.build]
+exclude = ["DEV_CREDENTIALS.local.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --disable-warnings --maxfail=1"
