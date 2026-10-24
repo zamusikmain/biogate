@@ -2,7 +2,7 @@
   'use strict';
   const STATES = Object.freeze(['NEUTRAL', 'INVALID', 'READY', 'CHALLENGE', 'CHALLENGE_SUCCESS', 'PROCESSING', 'SUCCESS', 'DENIED']);
   const actions = new Set(['CENTER', 'TURN_LEFT', 'TURN_RIGHT', 'BLINK']);
-  const quality = { NO_FACE: 'noFace', MULTIPLE_FACES: 'multiple', FACE_TOO_SMALL: 'small', IMAGE_BLURRY: 'blurry', BAD_LIGHTING: 'lighting' };
+  const quality = { NO_FACE: 'noFace', MULTIPLE_FACES: 'multiple', FACE_TOO_SMALL: 'small', IMAGE_BLURRY: 'blurry', BAD_LIGHTING: 'lighting', HEAD_TURNED: 'headTurned', HEAD_TILTED: 'headTilted' };
   const decisions = { IDENTIFIED: ['SUCCESS', 'verified'], RECOVERY_VERIFIED: ['SUCCESS', 'verified'], UNKNOWN: ['DENIED', 'unknown', 'unknownDetail'], AMBIGUOUS: ['DENIED', 'ambiguous', 'retryDetail'], BLOCKED: ['DENIED', 'blocked'], DISABLED: ['DENIED', 'disabled'], DENIED: ['DENIED', 'denied'] };
   const mounted = new WeakMap();
   const t = (key, lang = document.documentElement.lang) => {

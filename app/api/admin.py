@@ -147,7 +147,7 @@ async def validate_enrollment_frame(
         raise HTTPException(404, detail={"reason_code": "USER_NOT_FOUND"})
     try:
         payload = await read_enrollment_photo(photo, settings)
-        frame = pipeline.process_frame(payload)
+        frame = pipeline.process_enrollment_frame(payload)
     except BiometricError as error:
         return EnrollmentFrameValidationResponse(accepted=False, reason_code=error.reason_code)
     x, y, width, height = frame.observation.box
@@ -187,7 +187,7 @@ async def photo_enrollment(
     for index, (filename, photo) in enumerate(zip(filenames, photos, strict=True), 1):
         try:
             payload = await read_enrollment_photo(photo, settings)
-            frame = pipeline.process_frame(payload)
+            frame = pipeline.process_enrollment_frame(payload)
             embeddings.append(frame.embedding)
             results.append(
                 PhotoResult(

@@ -404,7 +404,7 @@ async def validate_own_biometric_frame(
     """Ephemeral capture feedback; never stores or approves a biometric template."""
     try:
         data = await read_enrollment_photo(photo, settings)
-        frame = pipeline.process_frame(data)
+        frame = pipeline.process_enrollment_frame(data)
     except BiometricError as error:
         return {"accepted": False, "reason_code": error.reason_code}
     x, y, width, height = frame.observation.box
@@ -431,7 +431,7 @@ async def submit_biometric_request(
     for photo in photos:
         try:
             data = await read_enrollment_photo(photo, settings)
-            frames.append(pipeline.process_frame(data))
+            frames.append(pipeline.process_enrollment_frame(data))
             source_data.append((data, photo.content_type or "image/jpeg"))
         except BiometricError as error:
             raise HTTPException(422, detail={"reason_code": error.reason_code}) from error

@@ -15,7 +15,7 @@
 - CV pipeline: OpenCV YuNet detection, SFace alignment and embeddings, MediaPipe blink geometry, blur/lighting/size quality gates.
 - ADMIN console: accounts, approval of biometric updates, evidence photos with SHA-256 integrity, audit and security events, live access monitor, backup/restore, complete erasure of a person.
 - RU/EN interface with light/dark themes, plain JavaScript, no build step.
-- 158 pytest tests and 45 Node UI tests, `ruff`, `mypy --strict`, GitHub Actions.
+- 177 pytest tests and 48 Node UI tests, a reproducible LFW accuracy benchmark, `ruff`, `mypy --strict`, GitHub Actions.
 
 **Key decisions.**
 
@@ -148,6 +148,10 @@ Growing ADMIN and USER tables use bounded server-side `limit`/`offset` queries w
 ## Biometric update workflow
 
 Users submit 3–5 uploaded or automatically captured webcam samples. Every image is checked for MIME, encoded size, decodability, face count, blur, lighting, alignment, and embedding extraction. The aggregate candidate is compared with other active templates for possible duplicates.
+
+Frames that become part of a stored template (ADMIN enrollment, user biometric updates and their live capture feedback) pass one more gate: head yaw (`BIOGATE_ENROLLMENT_MAX_YAW`, default 0.35 of the eye distance) and in-plane tilt (`BIOGATE_ENROLLMENT_MAX_ROLL_DEGREES`, default 20°). A failing frame is refused with `HEAD_TURNED` or `HEAD_TILTED`, shown as localized guidance. The other gates are also configurable: `BIOGATE_MIN_FACE_PIXELS`, `BIOGATE_MIN_SHARPNESS`, `BIOGATE_MIN_BRIGHTNESS`, `BIOGATE_MAX_BRIGHTNESS`. Login and liveness frames are not affected by the pose gate.
+
+**Several samples per person.** A person has one template record, but it keeps up to five representative sample embeddings (`biometric_template_samples`), chosen to be as different from each other as possible, so frames taken from slightly different angles are retained. Identification and 1:1 recovery score a probe against the centroid and every representative and use the best score. Storing several independent template records per person (for example, separate "with glasses" templates) would need the `UNIQUE(user_id)` constraint on `biometric_templates` removed, a migration, and changes to approval, duplicate detection and erasure; that is not implemented.
 
 The existing active template remains usable until an administrator approves the request. Rejection or a revision request never replaces it. Revision requires an administrator comment and permits resubmission. Approval atomically upserts the active template and records history, audit, and notification events. Raw embeddings and templates are never returned by the API.
 
@@ -282,7 +286,7 @@ The real `.env`, SQLite files, model binaries, evidence images, archives, and ba
 Get-ChildItem app\static -Filter *.js | ForEach-Object { node --check $_.FullName }
 ```
 
-The tests cover preserved V2 behavior, head-pose semantics, authentication/CSRF/RBAC, migration, identification threshold and ambiguity behavior, blocked accounts, throttling, the unified password policy, temporary/permanent password flows, USER/ADMIN localization and themes, biometric request revision/resubmission, evidence archival/integrity, versioned backup validation, deterministic risk rules, evaluation metrics, and OpenAPI filtering.
+The tests cover preserved V2 behavior, head-pose semantics, authentication/CSRF/RBAC, migration, identification threshold and ambiguity behavior, blocked accounts, throttling, the unified password policy, temporary/permanent password flows, USER/ADMIN localization and themes, biometric request revision/resubmission, evidence archival/integrity, versioned backup validation, deterministic risk rules, evaluation metrics, enrollment pose limits, and OpenAPI filtering.
 
 ## Face capture guidance
 
