@@ -41,7 +41,8 @@ class AccountAuthService:
         self._password_failures: dict[str, list[datetime]] = {}
         self._rate_lock = threading.RLock()
 
-    def validate_password(self, password: str) -> None:
+    @staticmethod
+    def validate_password(password: str) -> None:
         if len(password) < 12:
             raise AccountAuthError("PASSWORD_TOO_SHORT")
         if len(password) > 1024:

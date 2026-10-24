@@ -194,45 +194,37 @@ Before first V3 use with important data, make an offline copy of `data/biogate.d
 
 ## Setup on Windows
 
-Requires Python 3.11–3.13.
+Requires Python 3.11, 3.12 or 3.13 (any of them; the script finds it through `py` or `python`).
 
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-Copy-Item .env.example .env
-```
-
-Generate an Argon2id administrator hash without placing the password in shell history:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\generate_admin_hash.py
-```
-
-The helper prompts twice without echoing input. Put only its resulting hash in `.env`; do not commit `.env`.
-
-At minimum configure:
-
-```dotenv
-BIOGATE_ADMIN_USERNAME=admin
-BIOGATE_ADMIN_PASSWORD_HASH=<argon2id hash>
-BIOGATE_SESSION_SECRET=<random secret of at least 32 characters>
-```
-
-The environment administrator is additively bootstrapped into the V3 account table on startup if necessary. An existing V3 password is not overwritten on later starts. This is the local first-ADMIN bootstrap mechanism: it is configuration-driven rather than a public registration endpoint, and normal API account creation remains ADMIN-only.
-
-The ADMIN dashboard exposes real database/model readiness plus evidence counts and byte totals sourced from SQLite metadata, avoiding a full filesystem scan on every refresh. Backup management supports create, list, integrity validation, confirmed restore with a safety copy, and reasoned/audited deletion.
-
-Run:
+**One command:**
 
 ```powershell
 .\Start.bat
 ```
 
-`Start.bat` starts Uvicorn, waits about five seconds, and opens `http://127.0.0.1:8000/` without administrator rights. Alternatively:
+On the first run it:
+
+1. creates `.venv` with the first available Python 3.11–3.13;
+2. installs the dependencies (repeated only when `pyproject.toml` changes);
+3. creates `.env` from `.env.example`, asks twice for the administrator password without echoing it, stores only its Argon2id hash and generates a random `BIOGATE_SESSION_SECRET`;
+4. starts the server, which fetches any missing public CV model into `model_cache/`, and opens `http://127.0.0.1:8000/`.
+
+Existing values in `.env` are never overwritten. The same steps without the browser: `powershell -ExecutionPolicy Bypass -File scripts\run.ps1` (add `-Dev` for test tools, `-Port 8080` to change the port). Do not commit `.env`.
+
+Manual equivalent:
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe scripts\bootstrap_env.py      # creates/completes .env
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
+
+`.env` must contain at least `BIOGATE_ADMIN_USERNAME`, `BIOGATE_ADMIN_PASSWORD_HASH` (Argon2id) and `BIOGATE_SESSION_SECRET` (32+ characters).
+
+The environment administrator is additively bootstrapped into the V3 account table on startup if necessary. An existing V3 password is not overwritten on later starts. This is the local first-ADMIN bootstrap mechanism: it is configuration-driven rather than a public registration endpoint, and normal API account creation remains ADMIN-only.
+
+The ADMIN dashboard exposes real database/model readiness plus evidence counts and byte totals sourced from SQLite metadata, avoiding a full filesystem scan on every refresh. Backup management supports create, list, integrity validation, confirmed restore with a safety copy, and reasoned/audited deletion.
 
 ## Configuration
 
@@ -245,7 +237,7 @@ The real `.env`, SQLite files, model binaries, evidence images, archives, and ba
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe -m ruff check .
-.\.venv\Scripts\python.exe -m mypy --strict app scripts\evaluate_biometrics.py
+.\.venv\Scripts\python.exe -m mypy --strict app scripts
 Get-ChildItem app\static -Filter *.js | ForEach-Object { node --check $_.FullName }
 ```
 
