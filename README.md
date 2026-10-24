@@ -1,5 +1,44 @@
 # BioGate V3
 
+[![CI](https://github.com/zamusikmain/biogate/actions/workflows/ci.yml/badge.svg)](https://github.com/zamusikmain/biogate/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+**Local face login (1:N) with active liveness, built to show how biometric authentication can be done carefully: no cloud, no trusted client, and a real way to delete a person.**
+
+## In one minute
+
+**Why.** Face login demos usually trust the browser, compare against one hard-coded person and keep every photo forever. BioGate is a single-machine identity system that tries to get the unglamorous parts right: who decides that liveness passed, what happens when two people look alike, how a template is changed, and how biometric data is removed.
+
+**What is built.**
+
+- Face sign-in without choosing an account (1:N identification) plus password sign-in, USER and ADMIN roles, server-side sessions with CSRF and RBAC.
+- CV pipeline: OpenCV YuNet detection, SFace alignment and embeddings, MediaPipe blink geometry, blur/lighting/size quality gates.
+- ADMIN console: accounts, approval of biometric updates, evidence photos with SHA-256 integrity, audit and security events, live access monitor, backup/restore, complete erasure of a person.
+- RU/EN interface with light/dark themes, plain JavaScript, no build step.
+- 158 pytest tests and 45 Node UI tests, `ruff`, `mypy --strict`, GitHub Actions.
+
+**Key decisions.**
+
+1. **The server owns liveness.** It issues a random sequence (`CENTER`, `BLINK`, `TURN_LEFT`, `TURN_RIGHT`), tracks the step, stability frames and expiry, and never accepts a "liveness passed" flag from the browser. LEFT/RIGHT are physical head directions measured relative to a calibrated centre pose; the preview is mirrored, the uploaded frame is not.
+2. **A match needs a threshold and a margin.** The best candidate must pass the SFace cosine threshold (0.363) and beat the second best by a configurable margin. Otherwise the result is `UNKNOWN` or `AMBIGUOUS` and no session is created.
+3. **Templates change only through review.** A new template is checked for duplicates against other people, waits for an ADMIN, and replaces the old one atomically on approval; the old one keeps working until then.
+4. **Privacy is a feature, not a footnote.** Everything stays on the local disk, templates never leave the API, passwords and tokens are stored only as hashes, retention is configurable, and one request erases a person's account, templates, samples and photos while keeping only pseudonymous audit records.
+
+**Honest status.** FAR/FRR have not been measured; the 0.363 threshold is the published SFace default, not tuned on any dataset. Liveness is a demonstration, not certified PAD. Face recognition and liveness are covered by automated tests only through a fake pipeline and must be checked manually with a camera.
+
+## Screenshots
+
+<!-- Add PNG screenshots (the only images allowed by .gitignore) and the GIF to docs/img/, then uncomment:
+![Unified login with face guidance](docs/img/login.png)
+![Liveness challenge in progress](docs/img/liveness.png)
+![ADMIN console: user card](docs/img/admin-user.png)
+![Face login demo](docs/img/face-login.gif)
+-->
+
+_Screenshots and a short face-login GIF will be added here._
+
+## Overview
+
 BioGate V3 is a standalone, local-first biometric identity and access management system. It combines password authentication, face login without preselecting an account, a separate USER application, an ADMIN console, approval-based biometric updates, evidence storage, audit/security events, and local backup/restore.
 
 The normal V3 lifecycle uses one account, role, server-side session, and backend RBAC model. `/` is the unified password/face entry point; USER accounts are routed to `/user` and ADMIN accounts to `/admin`. `/admin/login` and the legacy admin API remain only for V2 compatibility and cannot open or authorize the V3 ADMIN console.
