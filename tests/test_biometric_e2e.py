@@ -59,6 +59,9 @@ class ObservationAdapter:
         analysis = self._analysis(identity, pose, "OPEN")
         return FrameResult(analysis.embedding, analysis.quality, analysis.observation)
 
+    def process_enrollment_frame(self, data: bytes) -> FrameResult:
+        return self.process_frame(data)
+
     def analyze_frame(self, data: bytes) -> FrameAnalysis:
         identity, pose, eyes = self._parts(data)
         return self._analysis(identity, pose, eyes)
@@ -239,18 +242,24 @@ def test_enrollment_identification_decisions_status_and_evidence(biometric_clien
     sessions_before_block = client.app.state.repository.list_account_sessions(person_a_id)
     assert any(item["login_method"] == "FACE" and item["revoked_at"] is None for item in sessions_before_block)
     _admin_login(client)
-    assert client.patch(
-        f"/api/v3/admin/accounts/{person_a_id}", json={"status": "BLOCKED", "reason": "E2E policy"}
-    ).status_code == 200
+    assert (
+        client.patch(
+            f"/api/v3/admin/accounts/{person_a_id}", json={"status": "BLOCKED", "reason": "E2E policy"}
+        ).status_code
+        == 200
+    )
     assert all(item["revoked_at"] for item in client.app.state.repository.list_account_sessions(person_a_id))
     blocked, _ = _complete_challenge(client, "a")
     assert blocked["decision"] == "BLOCKED"
 
     person_b_id = int(accounts["person-b"]["id"])
     _admin_login(client)
-    assert client.patch(
-        f"/api/v3/admin/accounts/{person_b_id}", json={"status": "DISABLED", "reason": "E2E policy"}
-    ).status_code == 200
+    assert (
+        client.patch(
+            f"/api/v3/admin/accounts/{person_b_id}", json={"status": "DISABLED", "reason": "E2E policy"}
+        ).status_code
+        == 200
+    )
     disabled, _ = _complete_challenge(client, "b")
     assert disabled["decision"] == "DISABLED"
 
@@ -304,10 +313,13 @@ def test_biometric_update_cancel_duplicate_and_atomic_approval(
     revision = client.post("/api/v3/user/biometric-requests", files=files_b)
     revision_id = revision.json()["id"]
     _admin_login(client)
-    assert client.post(
-        f"/api/v3/admin/biometric-requests/{revision_id}/review",
-        json={"decision": "REVISION_REQUIRED", "comment": "Retake"},
-    ).status_code == 200
+    assert (
+        client.post(
+            f"/api/v3/admin/biometric-requests/{revision_id}/review",
+            json={"decision": "REVISION_REQUIRED", "comment": "Retake"},
+        ).status_code
+        == 200
+    )
     assert np.allclose(_template(client, owner_id), _expected("a"))
 
     client.cookies.delete("biogate_session")
@@ -340,9 +352,7 @@ def test_biometric_update_cancel_duplicate_and_atomic_approval(
 
     duplicate = _create_account(client, "duplicate-target")
     duplicate_files = [("photos", (f"duplicate-{index}.jpg", b"b", "image/jpeg")) for index in range(3)]
-    duplicate_enrollment = client.post(
-        "/api/admin/users/duplicate-target/enrollment/photos", files=duplicate_files
-    )
+    duplicate_enrollment = client.post("/api/admin/users/duplicate-target/enrollment/photos", files=duplicate_files)
     assert duplicate_enrollment.status_code == 409
     assert duplicate_enrollment.json()["detail"]["reason_code"] == "DUPLICATE_BIOMETRIC"
     assert client.app.state.repository.get_template(int(duplicate["id"])) is None
@@ -384,8 +394,7 @@ def test_biometric_request_photos_are_reviewable_and_owner_scoped(biometric_clie
     own_photos = own_detail.json()["photos"]
     assert len(own_photos) == 3
     assert all(
-        set(photo) == {"id", "mime_type", "created_at", "integrity_status", "size_bytes"}
-        for photo in own_photos
+        set(photo) == {"id", "mime_type", "created_at", "integrity_status", "size_bytes"} for photo in own_photos
     )
     photo_id = own_photos[0]["id"]
     own_preview = client.get(f"/api/v3/photos/{photo_id}")
@@ -433,23 +442,24 @@ def test_targeted_recovery_is_one_to_one_single_use_and_status_gated(biometric_c
         },
     )
     assert reset.status_code == 204
-    assert client.post(
-        "/api/v3/recovery/reset",
-        json={
-            "token": authorization,
-            "new_password": "E2e-reuse-must-fail-012",
-            "confirmation": "E2e-reuse-must-fail-012",
-        },
-    ).status_code == 400
+    assert (
+        client.post(
+            "/api/v3/recovery/reset",
+            json={
+                "token": authorization,
+                "new_password": "E2e-reuse-must-fail-012",
+                "confirmation": "E2e-reuse-must-fail-012",
+            },
+        ).status_code
+        == 400
+    )
     assert all(item["revoked_at"] for item in client.app.state.repository.list_account_sessions(user_id))
 
     blocked = _create_account(client, "recovery-blocked")
     _enroll(client, "recovery-blocked", "b")
     blocked_id = int(blocked["id"])
     _admin_login(client)
-    client.patch(
-        f"/api/v3/admin/accounts/{blocked_id}", json={"status": "BLOCKED", "reason": "Recovery gate"}
-    )
+    client.patch(f"/api/v3/admin/accounts/{blocked_id}", json={"status": "BLOCKED", "reason": "Recovery gate"})
     denied, _ = _complete_challenge(client, "b", recovery_login="recovery-blocked")
     assert denied["decision"] == "DENIED" and "reset_authorization" not in denied
 
@@ -461,9 +471,7 @@ def test_targeted_recovery_is_one_to_one_single_use_and_status_gated(biometric_c
     for _ in range(client.app.state.settings.recovery_max_attempts):
         response = client.post("/api/v3/recovery/challenges", json={"login": "rate-limited-target"})
         assert response.status_code == 200
-    assert client.post(
-        "/api/v3/recovery/challenges", json={"login": "rate-limited-target"}
-    ).status_code == 429
+    assert client.post("/api/v3/recovery/challenges", json={"login": "rate-limited-target"}).status_code == 429
     events = {item["event_type"] for item in client.app.state.repository.security_events(limit=100)}
     assert {"PASSWORD_RECOVERY_FAILED", "PASSWORD_RESET"} <= events
     assert any(item["source_type"] == "FACE_DENIED" for item in client.app.state.repository.evidence_photos())
@@ -498,17 +506,23 @@ def test_recovery_uses_representative_when_centroid_is_below_threshold_and_keeps
     assert recovered["reset_authorization"]
 
     _admin_login(client)
-    assert client.patch(
-        f"/api/v3/admin/accounts/{user_id}", json={"status": "BLOCKED", "reason": "Recovery gate"}
-    ).status_code == 200
+    assert (
+        client.patch(
+            f"/api/v3/admin/accounts/{user_id}", json={"status": "BLOCKED", "reason": "Recovery gate"}
+        ).status_code
+        == 200
+    )
     blocked, _ = _complete_challenge(client, "b", recovery_login="representative-recovery")
     assert blocked["decision"] == "DENIED"
     assert "reset_authorization" not in blocked
 
     _admin_login(client)
-    assert client.patch(
-        f"/api/v3/admin/accounts/{user_id}", json={"status": "DISABLED", "reason": "Recovery gate"}
-    ).status_code == 200
+    assert (
+        client.patch(
+            f"/api/v3/admin/accounts/{user_id}", json={"status": "DISABLED", "reason": "Recovery gate"}
+        ).status_code
+        == 200
+    )
     disabled, _ = _complete_challenge(client, "b", recovery_login="representative-recovery")
     assert disabled["decision"] == "DENIED"
     assert "reset_authorization" not in disabled
@@ -556,7 +570,7 @@ def test_cv_failures_wrong_actions_expiry_and_semantic_diagnostics(biometric_cli
     expired = _send_frame(client, expiring["challenge_id"], "a|CENTER|OPEN")
     assert expired.status_code == 410
 
-    labels = (Path("app/static/v3-locales.js").read_text(encoding="utf-8"))
+    labels = Path("app/static/v3-locales.js").read_text(encoding="utf-8")
     assert "TURN_LEFT:'Поверните голову налево'" in labels
     assert "TURN_RIGHT:'Поверните голову направо'" in labels
     assert "TURN_LEFT:'Turn your head left'" in labels

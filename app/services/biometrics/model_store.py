@@ -14,24 +14,32 @@ logger = logging.getLogger(__name__)
 class ModelSpec:
     filename: str
     url: str
-    sha256: str | None = None
+    sha256: str
     max_bytes: int = 100 * 1024 * 1024
 
 
+# URLs point at immutable revisions (an opencv_zoo commit, a versioned MediaPipe path) and every file is
+# verified against its SHA-256, so a model can never change silently between installations.
+OPENCV_ZOO = "https://github.com/opencv/opencv_zoo/raw"
 YUNET = ModelSpec(
     "face_detection_yunet_2023mar.onnx",
-    "https://github.com/opencv/opencv_zoo/raw/refs/heads/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+    f"{OPENCV_ZOO}/f12e12798e8314f7c074a6656816c048dcc95b7a/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+    "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
 )
 SFACE = ModelSpec(
     "face_recognition_sface_2021dec.onnx",
-    "https://github.com/opencv/opencv_zoo/raw/refs/heads/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx",
+    f"{OPENCV_ZOO}/ba91a3b91d00d76e86540d4013f944bd6b514e39/models/face_recognition_sface/face_recognition_sface_2021dec.onnx",
     "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79",
 )
 FACE_LANDMARKER = ModelSpec(
     "face_landmarker.task",
-    "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task",
+    "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+    "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
     max_bytes=20 * 1024 * 1024,
 )
+
+
+DOWNLOAD_ATTEMPTS = 3
 
 
 class ModelStore:
@@ -45,6 +53,16 @@ class ModelStore:
         target = self.cache / spec.filename
         if target.exists() and self._valid(target, spec):
             return target
+        for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+            try:
+                return self._download(spec, target)
+            except OSError as error:  # network errors and timeouts; integrity failures are not retried
+                if attempt == DOWNLOAD_ATTEMPTS:
+                    raise
+                logger.warning("Download of %s failed (%s); retrying", spec.filename, error)
+        raise AssertionError("unreachable")
+
+    def _download(self, spec: ModelSpec, target: Path) -> Path:
         logger.info("Downloading public CV model %s", spec.filename)
         fd, temporary_name = tempfile.mkstemp(prefix="biogate-", suffix=".download", dir=self.cache)
         os.close(fd)
@@ -74,7 +92,5 @@ class ModelStore:
     def _valid(path: Path, spec: ModelSpec) -> bool:
         if not path.is_file() or path.stat().st_size < 100_000:
             return False
-        if spec.sha256 is None:
-            return True
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         return digest == spec.sha256

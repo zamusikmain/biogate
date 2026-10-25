@@ -10,7 +10,7 @@ from app.services.biometrics.landmarks import EyeGeometryService
 from app.services.biometrics.liveness import LivenessService
 from app.services.biometrics.model_store import FACE_LANDMARKER, SFACE, YUNET, ModelStore
 from app.services.biometrics.models import FrameAnalysis, FrameResult, LivenessResult
-from app.services.biometrics.quality import QualityService
+from app.services.biometrics.quality import EnrollmentPoseGate, QualityService
 
 
 class BiometricPipeline:
@@ -25,6 +25,7 @@ class BiometricPipeline:
             settings.min_brightness,
             settings.max_brightness,
         )
+        self.pose_gate = EnrollmentPoseGate(settings.enrollment_max_yaw, settings.enrollment_max_roll_degrees)
         self.liveness = LivenessService()
         self.model_name = self.embedder.model_name
         self.model_version = self.embedder.model_version
@@ -39,11 +40,21 @@ class BiometricPipeline:
         return np.asarray(image, dtype=np.uint8)
 
     def process_frame(self, data: bytes) -> FrameResult:
+        return self._process(data, enrollment=False)
+
+    def process_enrollment_frame(self, data: bytes) -> FrameResult:
+        """Quality gate for frames stored in a template: sharpness, lighting, face size, then head pose."""
+        return self._process(data, enrollment=True)
+
+    def _process(self, data: bytes, *, enrollment: bool) -> FrameResult:
         image = self.decode(data)
         observation = self.detector.detect_one(image)
         quality = self.quality.evaluate(image, observation)
         if not quality.accepted:
             raise BiometricError(quality.reason_code, "Image quality check failed")
+        pose_reason = self.pose_gate.evaluate(observation) if enrollment else None
+        if pose_reason:
+            raise BiometricError(pose_reason, "Look straight at the camera for enrollment")
         embedding = self.embedder.extract(image, observation)
         return FrameResult(embedding, quality, observation)
 
@@ -58,9 +69,7 @@ class BiometricPipeline:
         """Extract an embedding only for a frame accepted by the liveness state machine."""
         return self.process_frame(data).embedding
 
-    def _analyze_frame(
-        self, data: bytes, *, include_embedding: bool, analyze_eyes: bool = True
-    ) -> FrameAnalysis:
+    def _analyze_frame(self, data: bytes, *, include_embedding: bool, analyze_eyes: bool = True) -> FrameAnalysis:
         image = self.decode(data)
         observation = self.detector.detect_one(image)
         quality = self.quality.evaluate(image, observation)
@@ -82,7 +91,7 @@ class BiometricPipeline:
         )
 
     def create_template(self, frames: list[bytes]) -> tuple[NDArray[np.float32], float]:
-        results = [self.process_frame(frame) for frame in frames]
+        results = [self.process_enrollment_frame(frame) for frame in frames]
         return aggregate([result.embedding for result in results]), sum(r.quality.score for r in results) / len(results)
 
     def verify(self, frames: list[bytes], template: NDArray[np.float32]) -> tuple[float, float, LivenessResult]:

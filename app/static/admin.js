@@ -234,12 +234,42 @@ async function openV3User(id, tab = 'overview') {
   showDirect('user-detail', accountIdentity(user));
   history.replaceState({}, '', `/admin#users/${id}/${tab}`);
   const tabs = ['overview', 'biometrics', 'access', 'security', 'sessions', 'history', 'notes'];
-  $('user-card').innerHTML = `<button type="button" data-back-users>← ${L.t('users')}</button><div class="detail-hero"><div><h2>${esc(accountIdentity(user))}</h2><p>${esc(user.login)} · ${badge(user.role)} ${badge(user.status)}</p></div><div class="detail-actions"><button data-user-edit>${L.t('edit')}</button><button data-user-reset>${L.t('resetPassword')}</button></div></div><div class="detail-tabs">${tabs.map(name => `<button data-user-tab="${name}" class="${name === tab ? 'active' : ''}">${L.t(name)}</button>`).join('')}</div><div id="v3-user-tab"></div>`;
+  $('user-card').innerHTML = `<button type="button" data-back-users>← ${L.t('users')}</button><div class="detail-hero"><div><h2>${esc(accountIdentity(user))}</h2><p>${esc(user.login)} · ${badge(user.role)} ${badge(user.status)}</p></div><div class="detail-actions"><button data-user-edit>${L.t('edit')}</button><button data-user-reset>${L.t('resetPassword')}</button><button data-user-erase class="danger">${L.t('erasePerson')}</button></div></div><div class="detail-tabs">${tabs.map(name => `<button data-user-tab="${name}" class="${name === tab ? 'active' : ''}">${L.t(name)}</button>`).join('')}</div><div id="v3-user-tab"></div>`;
   document.querySelector('[data-back-users]').onclick = () => show('users');
   document.querySelectorAll('[data-user-tab]').forEach(button => button.onclick = () => openV3User(id, button.dataset.userTab));
   document.querySelector('[data-user-reset]').onclick = () => openPasswordResetDialog(id);
   document.querySelector('[data-user-edit]').onclick = () => renderV3UserEdit(user, tab);
+  document.querySelector('[data-user-erase]').onclick = () => openEraseAccountDialog(user);
   await renderV3UserTab(user, tab);
+}
+
+function eraseConfirmationValid(reason, word) {
+  return reason.trim().length > 0 && word === 'ERASE';
+}
+
+function openEraseAccountDialog(user) {
+  let dialog = $('erase-account-dialog');
+  if (!dialog) { dialog = document.createElement('dialog'); dialog.id = 'erase-account-dialog'; dialog.className = 'confirm-dialog'; document.body.appendChild(dialog); }
+  dialog.innerHTML = `<form method="dialog"><h2>${esc(L.t('erasePerson'))}</h2><p>${esc(tr('erasePersonWarning', { name: accountIdentity(user) }))}</p><label class="dialog-field"><span>${esc(L.t('actionReason'))}</span><textarea data-erase-reason required maxlength="500"></textarea></label><label class="dialog-field"><span>${esc(L.t('eraseTypeWord'))}</span><input data-erase-word autocomplete="off" spellcheck="false"></label><div class="confirm-actions"><button value="cancel">${L.t('cancel')}</button><button value="confirm" class="danger" data-erase-confirm disabled>${L.t('erasePerson')}</button></div></form>`;
+  const reason = dialog.querySelector('[data-erase-reason]');
+  const word = dialog.querySelector('[data-erase-word]');
+  const confirm = dialog.querySelector('[data-erase-confirm]');
+  const refresh = () => { confirm.disabled = !eraseConfirmationValid(reason.value, word.value); };
+  reason.oninput = refresh;
+  word.oninput = refresh;
+  dialog.addEventListener('close', async () => {
+    if (dialog.returnValue !== 'confirm' || !eraseConfirmationValid(reason.value, word.value)) return;
+    try {
+      await api(`/api/v3/admin/accounts/${user.id}`, jsonOptions('DELETE', { reason: reason.value.trim(), confirmation: word.value }));
+    } catch (error) {
+      toast(error.code || error.message);
+      return;
+    }
+    toast('personErased');
+    selectedV3UserId = null;
+    show('users');
+  }, { once: true });
+  dialog.showModal();
 }
 
 function renderV3UserEdit(user, tab) {

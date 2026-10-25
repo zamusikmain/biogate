@@ -90,13 +90,6 @@ class Repository:
             self._audit(conn, event, int(user["id"]), "SUCCESS", {"status": values["status"]})
         return self.get_user(external_id)
 
-    def delete_user(self, external_id: str) -> bool:
-        user = self.get_user(external_id)
-        if not user:
-            return False
-        with self.db.write() as conn:
-            return bool(conn.execute("DELETE FROM users WHERE id=?", (user["id"],)).rowcount)
-
     def upsert_template(
         self,
         external_id: str,
@@ -517,8 +510,13 @@ class Repository:
         return self.get_user_by_id(user_id) or {}
 
     def list_accounts(
-        self, limit: int = 50, offset: int = 0, search: str | None = None,
-        status: str | None = None, role: str | None = None, biometric: str | None = None,
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        search: str | None = None,
+        status: str | None = None,
+        role: str | None = None,
+        biometric: str | None = None,
     ) -> list[dict[str, Any]]:
         conditions = ["1=1"]
         params: list[Any] = []
@@ -548,7 +546,7 @@ class Repository:
                    u.last_login_at,u.last_login_method,u.password_changed_at,u.password_enabled,
                    u.face_enabled,u.biometric_recovery_enabled,bt.id AS biometric_template_id
                    FROM users u LEFT JOIN biometric_templates bt ON bt.user_id=u.id
-                   WHERE {' AND '.join(conditions)} ORDER BY u.created_at DESC LIMIT ? OFFSET ?""",  # noqa: S608
+                   WHERE {" AND ".join(conditions)} ORDER BY u.created_at DESC LIMIT ? OFFSET ?""",  # noqa: S608
                 (*params, limit, offset),
             ).fetchall()
         return [dict(row) for row in rows]
@@ -616,7 +614,10 @@ class Repository:
                     "ACTIVE": "ACCOUNT_ENABLED" if before.get("status") == "DISABLED" else "ACCOUNT_UNBLOCKED",
                 }.get(str(status), event_type)
             self._audit(
-                conn, event_type, user_id, "SUCCESS",
+                conn,
+                event_type,
+                user_id,
+                "SUCCESS",
                 {"changed_fields": sorted(updates), "reason": values.get("reason", "")},
             )
         if updates.get("status") in {"BLOCKED", "DISABLED"} or (
@@ -1156,8 +1157,13 @@ class Repository:
         }
 
     def update_biometric_request(
-        self, request_id: str, status: str, admin_comment: str = "", reviewed_by: int | None = None,
-        *, expected_status: str | None = None,
+        self,
+        request_id: str,
+        status: str,
+        admin_comment: str = "",
+        reviewed_by: int | None = None,
+        *,
+        expected_status: str | None = None,
     ) -> bool:
         parameters = (status, admin_comment, reviewed_by, utc_now() if reviewed_by else None, utc_now(), request_id)
         with self.db.write() as conn:
@@ -1311,6 +1317,82 @@ class Repository:
     def set_photo_integrity(self, photo_id: str, status: str) -> None:
         with self.db.write() as conn:
             conn.execute("UPDATE evidence_photos SET integrity_status=? WHERE id=?", (status, photo_id))
+
+    def erase_account(
+        self, user_id: int, *, erasure_id: str, admin_id: int | None, reason: str
+    ) -> dict[str, Any] | None:
+        """Remove a person and every biometric artefact; keep only pseudonymous event skeletons.
+
+        Returns the evidence and snapshot file names the caller must remove from disk once the
+        transaction has committed.
+        """
+        with self.db.write() as conn:
+            conn.execute("PRAGMA secure_delete = ON")
+            user = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+            if not user:
+                return None
+            if user["role"] == "ADMIN" and user["status"] == "ACTIVE":
+                remaining = conn.execute(
+                    "SELECT COUNT(*) FROM users WHERE role='ADMIN' AND status='ACTIVE' AND id<>?", (user_id,)
+                ).fetchone()[0]
+                if int(remaining) == 0:
+                    raise ValueError("LAST_ACTIVE_ADMIN_REQUIRED")
+            photos = [
+                dict(row)
+                for row in conn.execute(
+                    """SELECT id,storage_state,storage_key FROM evidence_photos
+                       WHERE user_id=:user
+                          OR access_event_id IN (SELECT id FROM access_events WHERE user_id=:user)
+                          OR biometric_request_id IN (SELECT id FROM biometric_requests WHERE user_id=:user)""",
+                    {"user": user_id},
+                ).fetchall()
+            ]
+            snapshots = [
+                str(row["file_name"])
+                for row in conn.execute(
+                    """SELECT s.file_name FROM attempt_snapshots s
+                       JOIN verification_attempts va ON va.id=s.attempt_id WHERE va.user_id=?""",
+                    (user_id,),
+                ).fetchall()
+            ]
+            conn.executemany("DELETE FROM evidence_photos WHERE id=?", [(photo["id"],) for photo in photos])
+            conn.execute(
+                """DELETE FROM attempt_snapshots
+                   WHERE attempt_id IN (SELECT id FROM verification_attempts WHERE user_id=?)""",
+                (user_id,),
+            )
+            # Event rows survive as pseudonymous counters: identifiers, network metadata and free text go.
+            erased = json.dumps({"erased_subject": True, "erasure_id": erasure_id})
+            conn.execute("UPDATE verification_attempts SET claimed_external_id='ERASED' WHERE user_id=?", (user_id,))
+            conn.execute("UPDATE verification_sessions SET claimed_external_id='ERASED' WHERE user_id=?", (user_id,))
+            conn.execute("UPDATE access_events SET client_address='',user_agent='' WHERE user_id=?", (user_id,))
+            conn.execute("UPDATE audit_events SET metadata=? WHERE user_id=?", (erased, user_id))
+            conn.execute("UPDATE security_events SET metadata=?,note='' WHERE user_id=?", (erased, user_id))
+            for key in ("best_user_id", "second_user_id", "duplicate_user_id"):
+                conn.execute(
+                    f"UPDATE security_events SET metadata=json_set(metadata,'$.{key}',NULL) "  # noqa: S608
+                    f"WHERE json_valid(metadata) AND json_extract(metadata,'$.{key}')=?",
+                    (user_id,),
+                )
+            # Cascades remove templates, samples, requests, history, sessions, notifications and notes;
+            # remaining references become NULL.
+            conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+            self._audit(
+                conn,
+                "ACCOUNT_ERASED",
+                None,
+                "SUCCESS",
+                {
+                    "erasure_id": erasure_id,
+                    "admin_id": admin_id,
+                    "reason": reason,
+                    "evidence_photos": len(photos),
+                    "attempt_snapshots": len(snapshots),
+                },
+            )
+        with self.db.connect() as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        return {"photos": photos, "snapshots": snapshots}
 
     def v3_admin_stats(self) -> dict[str, Any]:
         with self.db.connect() as conn:

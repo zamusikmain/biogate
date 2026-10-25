@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 
 from app.api.dependencies import (
     get_app_settings,
+    get_evidence_storage,
     get_identification_service,
     get_pipeline,
     get_repository,
@@ -27,11 +28,14 @@ from app.schemas.api import (
     UserResponse,
     UserUpdateRequest,
 )
+from app.services.account_auth import AccountSession
+from app.services.auth import AdminSession
 from app.services.biometrics.embedding import aggregate, select_representatives, serialize_embedding
 from app.services.biometrics.errors import BiometricError
 from app.services.biometrics.pipeline import BiometricPipeline
 from app.services.identification import IdentificationService
 from app.services.repository import Repository
+from app.services.storage import EvidenceStorage
 
 router = APIRouter(
     prefix="/api/admin",
@@ -97,8 +101,24 @@ def update_user(
 
 
 @router.delete("/users/{external_id}", response_model=DeleteResponse)
-def delete_user(external_id: str, repository: Annotated[Repository, Depends(get_repository)]) -> DeleteResponse:
-    if not repository.delete_user(external_id):
+def delete_user(
+    external_id: str,
+    session: Annotated[AdminSession | AccountSession, Depends(require_admin_session)],
+    repository: Annotated[Repository, Depends(get_repository)],
+    evidence: Annotated[EvidenceStorage, Depends(get_evidence_storage)],
+) -> DeleteResponse:
+    """Legacy entry point; performs the same complete erasure as DELETE /api/v3/admin/accounts/{id}."""
+    user = repository.get_user(external_id)
+    if not user:
+        raise HTTPException(404, detail={"reason_code": "USER_NOT_FOUND"})
+    admin_id = session.user_id if isinstance(session, AccountSession) else None
+    if admin_id == int(user["id"]):
+        raise HTTPException(409, detail={"reason_code": "CANNOT_ERASE_OWN_ACCOUNT"})
+    try:
+        erased = evidence.erase_account(int(user["id"]), admin_id=admin_id, reason="LEGACY_ADMIN_DELETE")
+    except ValueError as error:
+        raise HTTPException(409, detail={"reason_code": str(error)}) from error
+    if erased is None:
         raise HTTPException(404, detail={"reason_code": "USER_NOT_FOUND"})
     return DeleteResponse(deleted=True)
 
@@ -127,7 +147,7 @@ async def validate_enrollment_frame(
         raise HTTPException(404, detail={"reason_code": "USER_NOT_FOUND"})
     try:
         payload = await read_enrollment_photo(photo, settings)
-        frame = pipeline.process_frame(payload)
+        frame = pipeline.process_enrollment_frame(payload)
     except BiometricError as error:
         return EnrollmentFrameValidationResponse(accepted=False, reason_code=error.reason_code)
     x, y, width, height = frame.observation.box
@@ -167,7 +187,7 @@ async def photo_enrollment(
     for index, (filename, photo) in enumerate(zip(filenames, photos, strict=True), 1):
         try:
             payload = await read_enrollment_photo(photo, settings)
-            frame = pipeline.process_frame(payload)
+            frame = pipeline.process_enrollment_frame(payload)
             embeddings.append(frame.embedding)
             results.append(
                 PhotoResult(

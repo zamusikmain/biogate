@@ -29,6 +29,7 @@ from app.api.event_safety import safe_event_row
 from app.core.config import Settings
 from app.schemas.v3 import (
     AccountCreateRequest,
+    AccountErasureRequest,
     AccountUpdateRequest,
     AdminNoteRequest,
     AdminPasswordResetRequest,
@@ -68,6 +69,7 @@ V3_RUNTIME_SETTINGS = (
     "duplicate_biometric_threshold",
     "recovery_max_attempts",
 )
+
 
 def _client(request: Request) -> tuple[str, str]:
     return (request.client.host if request.client else "local", request.headers.get("user-agent", "")[:300])
@@ -402,7 +404,7 @@ async def validate_own_biometric_frame(
     """Ephemeral capture feedback; never stores or approves a biometric template."""
     try:
         data = await read_enrollment_photo(photo, settings)
-        frame = pipeline.process_frame(data)
+        frame = pipeline.process_enrollment_frame(data)
     except BiometricError as error:
         return {"accepted": False, "reason_code": error.reason_code}
     x, y, width, height = frame.observation.box
@@ -429,7 +431,7 @@ async def submit_biometric_request(
     for photo in photos:
         try:
             data = await read_enrollment_photo(photo, settings)
-            frames.append(pipeline.process_frame(data))
+            frames.append(pipeline.process_enrollment_frame(data))
             source_data.append((data, photo.content_type or "image/jpeg"))
         except BiometricError as error:
             raise HTTPException(422, detail={"reason_code": error.reason_code}) from error
@@ -561,19 +563,17 @@ def admin_update_account(
     current = repository.get_user_by_id(user_id)
     if not current:
         raise HTTPException(404, detail={"reason_code": "USER_NOT_FOUND"})
-    removes_active_admin = current.get("role") == "ADMIN" and current.get("status") == "ACTIVE" and (
-        payload.role == "USER" or payload.status in {"BLOCKED", "DISABLED"}
+    removes_active_admin = (
+        current.get("role") == "ADMIN"
+        and current.get("status") == "ACTIVE"
+        and (payload.role == "USER" or payload.status in {"BLOCKED", "DISABLED"})
     )
     if removes_active_admin and repository.active_admin_count(excluding_user_id=user_id) == 0:
         raise HTTPException(409, detail={"reason_code": "LAST_ACTIVE_ADMIN_REQUIRED"})
     enabled_password = (
-        payload.password_enabled
-        if payload.password_enabled is not None
-        else bool(current.get("password_enabled", 1))
+        payload.password_enabled if payload.password_enabled is not None else bool(current.get("password_enabled", 1))
     )
-    enabled_face = (
-        payload.face_enabled if payload.face_enabled is not None else bool(current.get("face_enabled", 1))
-    )
+    enabled_face = payload.face_enabled if payload.face_enabled is not None else bool(current.get("face_enabled", 1))
     if payload.status in {None, "ACTIVE"} and not enabled_password and not enabled_face:
         raise HTTPException(409, detail={"reason_code": "ACCOUNT_AUTH_METHOD_REQUIRED"})
     try:
@@ -747,6 +747,25 @@ def admin_remove_biometric(
     return {"removed": deleted}
 
 
+@router.delete("/admin/accounts/{user_id}")
+def admin_erase_account(
+    user_id: int,
+    payload: AccountErasureRequest,
+    admin: Annotated[AccountSession, Depends(require_account_admin)],
+    evidence: Annotated[EvidenceStorage, Depends(get_evidence_storage)],
+) -> dict[str, Any]:
+    """Permanently erase a person: account, templates, samples, evidence files and identifying event data."""
+    if user_id == admin.user_id:
+        raise HTTPException(409, detail={"reason_code": "CANNOT_ERASE_OWN_ACCOUNT"})
+    try:
+        result = evidence.erase_account(user_id, admin_id=admin.user_id, reason=payload.reason)
+    except ValueError as error:
+        raise HTTPException(409, detail={"reason_code": str(error)}) from error
+    if result is None:
+        raise HTTPException(404, detail={"reason_code": "USER_NOT_FOUND"})
+    return result
+
+
 @router.get("/admin/dashboard")
 def v3_dashboard(
     _: Annotated[AccountSession, Depends(require_account_admin)],
@@ -796,7 +815,9 @@ def v3_settings(
     settings: Annotated[Settings, Depends(get_app_settings)],
 ) -> dict[str, Any]:
     result = {name: getattr(settings, name) for name in V3_RUNTIME_SETTINGS}
-    result.update({"require_liveness": True, "active_image_days": 60, "permanent_archive": True})
+    result.update(
+        {"require_liveness": True, "active_image_days": settings.active_image_days, "permanent_archive": True}
+    )
     return result
 
 
@@ -1039,9 +1060,7 @@ def _evidence_response(
         raise HTTPException(404, detail={"reason_code": "PHOTO_NOT_FOUND"}) from error
     if record.get("integrity_status") == "INTEGRITY_FAILED" or not evidence.verify_integrity(photo_id):
         raise HTTPException(409, detail={"reason_code": "EVIDENCE_INTEGRITY_FAILED"})
-    suffix = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}.get(
-        str(record["mime_type"]), ".bin"
-    )
+    suffix = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}.get(str(record["mime_type"]), ".bin")
     date_part = str(record["created_at"])[:10].replace("-", "")
     safe_name = f"biogate_evidence_{date_part}_{photo_id[:12]}{suffix}"
     if download:

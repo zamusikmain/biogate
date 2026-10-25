@@ -66,9 +66,7 @@ def _verify_one_to_one(
     service = ChallengeService(repository, settings, identification)
     session = service.create(external_id)
     sequence = json.loads(session["expected_sequence"])
-    capture = EphemeralCapture(
-        embeddings=[probe for _ in sequence], quality_scores=[0.95 for _ in sequence]
-    )
+    capture = EphemeralCapture(embeddings=[probe for _ in sequence], quality_scores=[0.95 for _ in sequence])
     return service._finalize(session, sequence, capture, _analysis(probe))
 
 
@@ -147,8 +145,7 @@ def test_approval_faults_roll_back_centroid_representatives_and_request(
     assert np.allclose(centroid, old_centroid)
     assert len(representatives) == len(old_representatives)
     assert all(
-        np.allclose(actual, expected)
-        for actual, expected in zip(representatives, old_representatives, strict=True)
+        np.allclose(actual, expected) for actual, expected in zip(representatives, old_representatives, strict=True)
     )
     assert repository.get_biometric_request(str(request["id"]))["status"] == "PENDING_REVIEW"  # type: ignore[index]
     with repository.db.write() as connection:
@@ -167,9 +164,7 @@ def test_approval_state_conflicts_have_exactly_one_winner(tmp_path: Path, compet
 
     def review(decision: str) -> str:
         try:
-            workflow.review(
-                str(request["id"]), decision, None, "Retake" if decision == "REVISION_REQUIRED" else ""
-            )
+            workflow.review(str(request["id"]), decision, None, "Retake" if decision == "REVISION_REQUIRED" else "")
             return decision
         except BiometricWorkflowError as error:
             return error.reason_code
@@ -204,9 +199,7 @@ def test_duplicate_submit_has_one_pending_request_and_no_orphan_samples(tmp_path
 
     def submit() -> str:
         try:
-            request = workflow.submit(
-                int(user["id"]), probe, "test", "1", 2, [probe, _vector(0.8, 0.6, 0.0)]
-            )
+            request = workflow.submit(int(user["id"]), probe, "test", "1", 2, [probe, _vector(0.8, 0.6, 0.0)])
             return str(request["status"])
         except BiometricWorkflowError as error:
             return error.reason_code
@@ -274,7 +267,12 @@ def test_one_to_one_succeeds_from_representative_when_centroid_is_below_threshol
     centroid = _vector(1.0, 0.0, 0.0)
     representative = _vector(0.0, 1.0, 0.0)
     repository.upsert_template(
-        "representative-verify", "test", "1", serialize_embedding(centroid), 3, 1,
+        "representative-verify",
+        "test",
+        "1",
+        serialize_embedding(centroid),
+        3,
+        1,
         [(serialize_embedding(representative), 3)],
     )
 
