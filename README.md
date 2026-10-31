@@ -229,7 +229,27 @@ These numbers describe LFW news photos, not webcam images or 1:N identification;
 .\.venv\Scripts\python.exe -m evaluation.run --model sface
 ```
 
-The tool never reads the application database, evidence or `.env`, and never changes the production threshold. An ArcFace R100 comparison (lower error, 12x slower, non-commercial weights) is in [docs/EVALUATION.md](docs/EVALUATION.md#model-comparison-policy-acquired-same-pairs-same-detector-and-alignment).
+The tool never reads the application database, evidence or `.env`, and never changes the production threshold. An ArcFace R100 comparison (lower error, 12x slower, non-commercial weights) is in [docs/EVALUATION.md](docs/EVALUATION.md#model-comparison-policy-acquired-same-pairs-same-detector-and-alignment) and summarised below.
+
+## SFace vs ArcFace
+
+Same LFW View 2 pairs, same YuNet detector and `alignCrop` alignment; 5,999 pairs where both faces were found. Scores come from [docs/evaluation/pair_scores.csv](docs/evaluation/pair_scores.csv) and metrics from `evaluation/metrics.py`. ArcFace thresholds are on its own score scale; its working point is chosen at the same FAR as SFace at 0.363.
+
+| Metric | SFace (OpenCV Zoo 2021dec, production) | ArcFace LResNet100E-IR (ONNX Model Zoo) |
+|---|---|---|
+| EER | 0.80 % (threshold 0.300) | 0.30 % (threshold 0.228) |
+| Working point | 0.363: FAR 0.067 % (2/3,000), FRR 1.53 % (46/2,999) | 0.258: FAR 0.067 % (2/3,000), FRR 0.43 % (13/2,999) |
+| TAR @ FAR <= 0.1 % | 98.47 % | 99.57 % |
+| TAR @ FAR <= 0.01 % | 97.57 % (threshold 0.404) | 99.53 % (threshold 0.264) |
+| Embedding time per face, CPU (OpenCV DNN, median / p95) | 16.7 / 20.3 ms | 197.3 / 247.3 ms (fp32); int8 variant: 364 ms median |
+| Model size | 36.9 MiB | 248.9 MiB (int8 variant: 63 MiB) |
+| Weights licence | Apache-2.0 | see below: non-commercial research only in practice |
+
+With 3,000 impostor pairs, FAR <= 0.01 % means zero false accepts, so that row is coarse. The int8 timing was measured separately on the same machine, under higher load (SFace measured 28.7 ms in the same run).
+
+**ArcFace weights licence.** The ONNX Model Zoo page (`arcfaceresnet100-8.onnx`, commit `4c46cd00`) states Apache-2.0, but the weights are InsightFace's model trained on refined MS-Celeb-1M. InsightFace states that all its pretrained models are available for non-commercial research purposes only, and Microsoft withdrew MS-Celeb-1M in 2019. No ArcFace-class weights with a clean commercial licence were found.
+
+**Decision: BioGate stays on SFace.** ArcFace is clearly more accurate on LFW, but at 197 ms per face it is over the 150 ms CPU budget (the int8 variant is slower still in OpenCV DNN), it is 6.7x larger, and its weights are non-commercial. The ArcFace weights are never committed or downloaded by the application. LFW is not webcam data, so these numbers are not a production claim.
 
 ## OpenAPI
 
