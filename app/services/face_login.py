@@ -87,6 +87,11 @@ class FaceLoginService:
                 raise KeyError("CHALLENGE_NOT_FOUND")
             return state.sequence[state.index] if state.index < len(state.sequence) else "COMPLETE"
 
+    def discard(self, challenge_id: str) -> FaceLoginState | None:
+        """Drop a challenge so it can never complete, e.g. after a spoof was detected."""
+        with self._lock:
+            return self._states.pop(challenge_id, None)
+
     def analyze(
         self,
         challenge_id: str,

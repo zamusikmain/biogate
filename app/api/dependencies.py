@@ -12,6 +12,7 @@ from app.services.challenges import ChallengeService
 from app.services.face_login import FaceLoginService
 from app.services.identification import IdentificationService
 from app.services.repository import Repository
+from app.services.spoof_events import SpoofEventRecorder
 from app.services.storage import BackupService, EvidenceStorage
 
 
@@ -53,6 +54,10 @@ def get_backup_service(request: Request) -> BackupService:
 
 def get_biometric_workflow(request: Request) -> BiometricWorkflowService:
     return cast(BiometricWorkflowService, request.app.state.biometric_workflow)
+
+
+def get_spoof_events(request: Request) -> SpoofEventRecorder:
+    return cast(SpoofEventRecorder, request.app.state.spoof_events)
 
 
 def get_face_login_service(request: Request) -> FaceLoginService:

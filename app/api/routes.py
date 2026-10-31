@@ -20,6 +20,7 @@ from app.api.dependencies import (
     get_app_settings,
     get_pipeline,
     get_repository,
+    get_spoof_events,
     require_admin_csrf,
     require_admin_session,
 )
@@ -33,10 +34,12 @@ from app.schemas.api import (
     VerificationAttemptResponse,
     VerificationResponse,
 )
+from app.services.biometrics.anti_spoofing import SpoofDetectedError
 from app.services.biometrics.embedding import deserialize_embedding, serialize_embedding
 from app.services.biometrics.errors import BiometricError
 from app.services.biometrics.pipeline import BiometricPipeline
 from app.services.repository import Repository
+from app.services.spoof_events import SpoofEventRecorder
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -111,6 +114,7 @@ async def enroll(
     repository: Annotated[Repository, Depends(get_repository)],
     pipeline: Annotated[BiometricPipeline, Depends(get_pipeline)],
     settings: Annotated[Settings, Depends(get_app_settings)],
+    spoof_events: Annotated[SpoofEventRecorder, Depends(get_spoof_events)],
 ) -> EnrollmentResponse:
     if repository.get_user(external_id):
         raise HTTPException(409, detail={"reason_code": "ALREADY_ENROLLED", "message": "User ID already exists"})
@@ -133,6 +137,9 @@ async def enroll(
             serialize_embedding(template),
             template.size,
         )
+    except SpoofDetectedError as error:
+        spoof_events.record(error, "ADMIN_ENROLLMENT", metadata={"external_id": external_id})
+        raise HTTPException(422, detail={"reason_code": error.reason_code, "message": error.message}) from error
     except BiometricError as error:
         raise HTTPException(422, detail={"reason_code": error.reason_code, "message": error.message}) from error
     except sqlite3.IntegrityError as error:
@@ -156,6 +163,7 @@ async def verify(
     repository: Annotated[Repository, Depends(get_repository)],
     pipeline: Annotated[BiometricPipeline, Depends(get_pipeline)],
     settings: Annotated[Settings, Depends(get_app_settings)],
+    spoof_events: Annotated[SpoofEventRecorder, Depends(get_spoof_events)],
 ) -> VerificationResponse:
     started = time.perf_counter()
     user = repository.get_user(external_id)
@@ -226,6 +234,9 @@ async def verify(
             result, reason = "VERIFIED", "MATCH"
         else:
             reason = "FACE_MISMATCH"
+    except SpoofDetectedError as error:
+        reason = error.reason_code
+        spoof_events.record(error, "VERIFICATION", int(user["id"]))
     except BiometricError as error:
         reason = error.reason_code
     except Exception:

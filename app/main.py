@@ -31,6 +31,7 @@ from app.services.challenges import ChallengeService
 from app.services.face_login import FaceLoginService
 from app.services.identification import IdentificationService
 from app.services.repository import Repository
+from app.services.spoof_events import SpoofEventRecorder
 from app.services.storage import BackupService, EvidenceStorage
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -67,6 +68,7 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
         app.state.identification_service = IdentificationService(app.state.repository, config)
         app.state.evidence_storage = EvidenceStorage(app.state.repository, config)
         app.state.backup_service = BackupService(app.state.repository, config)
+        app.state.spoof_events = SpoofEventRecorder(app.state.repository)
         app.state.biometric_workflow = BiometricWorkflowService(app.state.repository, app.state.identification_service)
         app.state.pipeline = pipeline or BiometricPipeline(config)
         app.state.challenge_service = ChallengeService(app.state.repository, config, app.state.identification_service)

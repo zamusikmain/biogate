@@ -12,10 +12,10 @@
 **What is built.**
 
 - Face sign-in without choosing an account (1:N identification) plus password sign-in, USER and ADMIN roles, server-side sessions with CSRF and RBAC.
-- CV pipeline: OpenCV YuNet detection, SFace alignment and embeddings, MediaPipe blink geometry, blur/lighting/size quality gates.
+- CV pipeline: OpenCV YuNet detection, SFace alignment and embeddings, MediaPipe blink geometry, blur/lighting/size quality gates, passive MiniFASNet anti-spoofing against photos and screens.
 - ADMIN console: accounts, approval of biometric updates, evidence photos with SHA-256 integrity, audit and security events, live access monitor, backup/restore, complete erasure of a person.
 - RU/EN interface with light/dark themes, plain JavaScript, no build step.
-- 177 pytest tests and 48 Node UI tests, a reproducible LFW accuracy benchmark, `ruff`, `mypy --strict`, GitHub Actions.
+- 201 pytest tests and 49 Node UI tests, a reproducible LFW accuracy benchmark, `ruff`, `mypy --strict`, GitHub Actions.
 
 **Key decisions.**
 
@@ -109,6 +109,17 @@ The decision uses both:
 Below threshold is `UNKNOWN`. A close Top-1/Top-2 result is `AMBIGUOUS`. Neither receives a session. A confidently recognized blocked or disabled account produces its corresponding policy decision, evidence, access event, and security alert without creating a session. Candidate identities are retained only in protected security metadata and are not exposed in the public failure response.
 
 `0.363` remains the established SFace cosine threshold. Its 1:1 FAR/FRR on LFW is listed under [Accuracy](#accuracy-on-lfw); no 1:N accuracy is claimed. Any real 1:N deployment requires representative evaluation using its population, cameras, lighting, and attack model.
+
+## Passive anti-spoofing
+
+Every frame that reaches the CV pipeline is checked by a passive presentation-attack detector after face detection and the quality gate, and before any embedding is extracted or compared. This covers face login, biometric password recovery, the user's biometric update (capture preview and submission), ADMIN photo and webcam enrollment, and the legacy V2 verification endpoints. It complements the active liveness challenge: a printed photo or a phone screen that someone moves and tilts can still be rejected on a single frame.
+
+- **Model.** The MiniFASNetV2 + MiniFASNetV1SE ensemble from [Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) (Apache-2.0), in the ONNX export published by [yakhyo/face-anti-spoofing](https://github.com/yakhyo/face-anti-spoofing). About 1.7 MB per model, run on the CPU through `cv2.dnn`, so no new dependency; roughly 5–15 ms per frame for both models. Like the other models it is downloaded once into `model_cache` over HTTPS and verified against a pinned SHA-256 before it is loaded.
+- **Score.** Each model sees the face box enlarged by its training scale (2.7 and 4.0), resized to 80×80. The live score is the softmax probability of the "real" class averaged over both models, from 0 to 1.
+- **Decision.** A frame whose live score is below the threshold is rejected with `SPOOF_DETECTED`. During face login or recovery this closes the challenge at once: the response is `403`, no session or reset authorization is issued, and later frames for that challenge get `CHALLENGE_NOT_FOUND`. A `DENIED` access event and a `SPOOF_DETECTED` security event (with the context, the live score and the threshold) are written and ADMINs are notified. In biometric capture the frame is refused and the user can try again; while a photo is held up to the live capture preview at most one event per person per minute is logged, while every submitted request or uploaded photo is logged. Repeated spoof events raise the account's risk level like other biometric failures.
+- **Settings.** `BIOGATE_ANTI_SPOOFING_ENABLED` (default `true`) and `BIOGATE_ANTI_SPOOFING_THRESHOLD` (default `0.80`, allowed `0.50`–`0.99`; higher is stricter). Both can be changed in the ADMIN console under Settings → Authentication and take effect immediately without a restart; values saved there override `.env`. The reference implementation simply takes the most likely class, which in practice is about 0.5, so 0.80 is deliberately strict. If real users are rejected under your lighting, lower it in small steps (0.75, 0.70) rather than turning the check off, and watch the security log.
+
+**Honest limits.** The check is meant to stop the cheap attacks: a printed photo, a photo or video on a phone, tablet or monitor held in front of the camera. It does **not** reliably stop high-quality 3D masks, silicone masks, or a well-lit high-resolution display at the right distance, and it does nothing against an attacker who injects images directly into the API instead of filming them (a digital photo sent as a file looks "live" to the model, because there is no recapture to detect). It has not been evaluated on BioGate's own cameras; the score depends on the webcam, lighting and distance, so a strict threshold can also reject real people in poor light or with strong backlight. It is not certified PAD (ISO/IEC 30107-3).
 
 ## Password authentication and recovery
 
@@ -272,7 +283,7 @@ The ADMIN dashboard exposes real database/model readiness plus evidence counts a
 
 ## Configuration
 
-See `.env.example`. Important V3 values include identification threshold/margin, duplicate threshold, account absolute/idle session timeouts, password policy and throttling, recovery limits, protected storage roots, and login-method switches. Active evidence retention is set with `BIOGATE_ACTIVE_IMAGE_DAYS`. Liveness remains mandatory for face login and biometric recovery.
+See `.env.example`. Important V3 values include identification threshold/margin, duplicate threshold, account absolute/idle session timeouts, password policy and throttling, recovery limits, protected storage roots, and login-method switches. Active evidence retention is set with `BIOGATE_ACTIVE_IMAGE_DAYS`. Liveness remains mandatory for face login and biometric recovery. Passive anti-spoofing is on by default and is configured with `BIOGATE_ANTI_SPOOFING_ENABLED` and `BIOGATE_ANTI_SPOOFING_THRESHOLD` (see [Passive anti-spoofing](#passive-anti-spoofing)).
 
 The real `.env`, SQLite files, model binaries, evidence images, archives, and backups are excluded from Git.
 
@@ -319,4 +330,4 @@ not validate physical camera quality, recognition or liveness; these require man
 
 BioGate V3 stores aggregate biometric templates, access metadata, selected evidence, biometric-request images, unknown/ambiguous evidence, permanent archives, sessions, and audit/security metadata. It does not store continuous video, plaintext passwords, plaintext reset/session tokens, password hashes in APIs, templates in APIs, or raw embeddings in logs.
 
-SQLite and local filesystem storage are intended for a single local instance, not horizontal scaling. In-memory active liveness state is lost on restart and the challenge must be repeated. SSE monitor interruption does not affect authentication. The bundled liveness is not certified PAD, 1:N performance is not asserted without representative evaluation, and archived evidence is kept until the person is erased, which must be treated as a deliberate privacy decision. Templates, evidence and backups are stored unencrypted on the local disk.
+SQLite and local filesystem storage are intended for a single local instance, not horizontal scaling. In-memory active liveness state is lost on restart and the challenge must be repeated. SSE monitor interruption does not affect authentication. The bundled liveness and passive anti-spoofing are not certified PAD, the anti-spoofing model does not stop high-quality masks or images injected straight into the API, 1:N performance is not asserted without representative evaluation, and archived evidence is kept until the person is erased, which must be treated as a deliberate privacy decision. Templates, evidence and backups are stored unencrypted on the local disk.

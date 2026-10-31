@@ -37,6 +37,21 @@ FACE_LANDMARKER = ModelSpec(
     "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
     max_bytes=20 * 1024 * 1024,
 )
+# MiniFASNet (Silent-Face-Anti-Spoofing, Apache-2.0) converted to ONNX by yakhyo/face-anti-spoofing.
+# Release assets are not content-addressed, so the SHA-256 is what pins the exact weights.
+ANTI_SPOOFING_RELEASE = "https://github.com/yakhyo/face-anti-spoofing/releases/download/weights"
+MINIFASNET_V2 = ModelSpec(
+    "MiniFASNetV2.onnx",
+    f"{ANTI_SPOOFING_RELEASE}/MiniFASNetV2.onnx",
+    "b32929adc2d9c34b9486f8c4c7bc97c1b69bc0ea9befefc380e4faae4e463907",
+    max_bytes=10 * 1024 * 1024,
+)
+MINIFASNET_V1SE = ModelSpec(
+    "MiniFASNetV1SE.onnx",
+    f"{ANTI_SPOOFING_RELEASE}/MiniFASNetV1SE.onnx",
+    "ebab7f90c7833fbccd46d3a555410e78d969db5438e169b6524be444862b3676",
+    max_bytes=10 * 1024 * 1024,
+)
 
 
 DOWNLOAD_ATTEMPTS = 3

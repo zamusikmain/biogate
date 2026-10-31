@@ -569,6 +569,9 @@ function humanMetadata(value, { action=false, skipAction=false } = {}) {
   if (typeof data.old_status === 'string') add('old_status', L.t('old_status'), humanCode(data.old_status));
   if (typeof data.new_status === 'string') add('new_status', L.t('new_status'), humanCode(data.new_status));
   if (typeof data.note === 'string') add('note', L.t('note'), data.note);
+  if (typeof data.context === 'string') add('context', L.t('spoofContext'), humanCode(data.context));
+  if (typeof data.live_score === 'number') add('live_score', L.t('liveScore'), pct(data.live_score));
+  if (typeof data.live_score === 'number' && typeof data.threshold === 'number') add('threshold', L.t('liveScoreThreshold'), pct(data.threshold));
   return fields.join('');
 }
 function eventMetadataDetails(row) {

@@ -376,8 +376,8 @@ def test_admin_enrollment_method_selector_is_accessible_and_theme_safe() -> None
         "styles.css": 8,
         "admin-extra.css": 11,
         "v3.css": 8,
-        "locales.js": 12,
-        "admin.js": 13,
+        "locales.js": 13,
+        "admin.js": 14,
     }
     for asset, version in asset_versions.items():
         assert f"/static/{asset}?v={version}" in template

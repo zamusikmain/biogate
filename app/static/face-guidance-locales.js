@@ -12,6 +12,7 @@
       timeout: 'Время проверки истекло', limited: 'Слишком много попыток. Повторите позже',
       capturing: 'Смотрите прямо. Получаем фотографии', submitted: 'Заявка отправлена на проверку',
       CENTER: 'Смотрите прямо в камеру', TURN_LEFT: 'Поверните голову влево', TURN_RIGHT: 'Поверните голову вправо', BLINK: 'Моргните',
+      spoof: 'Похоже на фото или экран', spoofDetail: 'Смотрите в камеру сами, без телефона и распечаток',
       turnMoreLeft: 'Поверните голову немного сильнее влево', turnMoreRight: 'Поверните голову немного сильнее вправо', blinkCenter: 'Посмотрите прямо и моргните',
     },
     en: {
@@ -26,6 +27,7 @@
       timeout: 'Verification timed out', limited: 'Too many attempts. Try again later',
       capturing: 'Look straight ahead. Capturing photos', submitted: 'Request submitted for review',
       CENTER: 'Look straight into the camera', TURN_LEFT: 'Turn your head left', TURN_RIGHT: 'Turn your head right', BLINK: 'Blink',
+      spoof: 'This looks like a photo or a screen', spoofDetail: 'Face the camera yourself, without a phone or printout',
       turnMoreLeft: 'Turn your head slightly farther left', turnMoreRight: 'Turn your head slightly farther right', blinkCenter: 'Look straight ahead and blink',
     },
   };

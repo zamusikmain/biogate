@@ -145,6 +145,11 @@ test('backend accepted CENTER alone produces green READY; waiting/calibration ne
 for (const code of ['NO_FACE', 'FACE_TOO_SMALL', 'MULTIPLE_FACES', 'IMAGE_BLURRY', 'BAD_LIGHTING']) test(code + ' is recoverable red', () => {
   const G = setup().ctx.FaceGuidance; assert.equal(G.fromError(code).state, 'INVALID'); assert.equal(G.fromError(code).recoverable, true);
 });
+test('SPOOF_DETECTED stops the face flow with a localized denial', () => {
+  const G = setup().ctx.FaceGuidance; const view = G.fromError('SPOOF_DETECTED');
+  assert.equal(view.state, 'DENIED'); assert.equal(view.key, 'spoof'); assert.equal(view.detail, 'spoofDetail'); assert.notEqual(view.recoverable, true);
+  assert.equal(view.technical, undefined);
+});
 for (const action of ['TURN_LEFT', 'TURN_RIGHT', 'BLINK']) test(action + ' instruction retains backend semantics', () => {
   const G = setup().ctx.FaceGuidance; const view = G.fromBackend({ expected_action: action, observed_action: 'CENTER' });
   assert.equal(view.state, 'CHALLENGE'); assert.equal(view.key, action); assert.equal(view.hint, action);

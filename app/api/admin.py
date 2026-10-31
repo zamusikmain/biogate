@@ -12,6 +12,7 @@ from app.api.dependencies import (
     get_identification_service,
     get_pipeline,
     get_repository,
+    get_spoof_events,
     require_admin_csrf,
     require_admin_session,
 )
@@ -30,11 +31,13 @@ from app.schemas.api import (
 )
 from app.services.account_auth import AccountSession
 from app.services.auth import AdminSession
+from app.services.biometrics.anti_spoofing import SpoofDetectedError
 from app.services.biometrics.embedding import aggregate, select_representatives, serialize_embedding
 from app.services.biometrics.errors import BiometricError
 from app.services.biometrics.pipeline import BiometricPipeline
 from app.services.identification import IdentificationService
 from app.services.repository import Repository
+from app.services.spoof_events import SpoofEventRecorder
 from app.services.storage import EvidenceStorage
 
 router = APIRouter(
@@ -142,12 +145,17 @@ async def validate_enrollment_frame(
     repository: Annotated[Repository, Depends(get_repository)],
     pipeline: Annotated[BiometricPipeline, Depends(get_pipeline)],
     settings: Annotated[Settings, Depends(get_app_settings)],
+    spoof_events: Annotated[SpoofEventRecorder, Depends(get_spoof_events)],
 ) -> EnrollmentFrameValidationResponse:
-    if not repository.get_user(external_id):
+    user = repository.get_user(external_id)
+    if not user:
         raise HTTPException(404, detail={"reason_code": "USER_NOT_FOUND"})
     try:
         payload = await read_enrollment_photo(photo, settings)
         frame = pipeline.process_enrollment_frame(payload)
+    except SpoofDetectedError as error:
+        spoof_events.record(error, "ADMIN_ENROLLMENT_CAPTURE", int(user["id"]), preview=True)
+        return EnrollmentFrameValidationResponse(accepted=False, reason_code=error.reason_code)
     except BiometricError as error:
         return EnrollmentFrameValidationResponse(accepted=False, reason_code=error.reason_code)
     x, y, width, height = frame.observation.box
@@ -175,6 +183,7 @@ async def photo_enrollment(
     pipeline: Annotated[BiometricPipeline, Depends(get_pipeline)],
     settings: Annotated[Settings, Depends(get_app_settings)],
     identification: Annotated[IdentificationService, Depends(get_identification_service)],
+    spoof_events: Annotated[SpoofEventRecorder, Depends(get_spoof_events)],
 ) -> PhotoEnrollmentResponse:
     user = repository.get_user(external_id)
     if not user:
@@ -194,6 +203,9 @@ async def photo_enrollment(
                     index=index, filename=filename, accepted=True, reason_code="OK", quality_score=frame.quality.score
                 )
             )
+        except SpoofDetectedError as error:
+            spoof_events.record(error, "ADMIN_ENROLLMENT", int(user["id"]), metadata={"photo_index": index})
+            results.append(PhotoResult(index=index, filename=filename, accepted=False, reason_code=error.reason_code))
         except BiometricError as error:
             results.append(PhotoResult(index=index, filename=filename, accepted=False, reason_code=error.reason_code))
     if len(embeddings) < settings.min_enrollment_frames:
