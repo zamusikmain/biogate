@@ -251,6 +251,14 @@ class ChallengeService:
                 stability_count=capture.stability_count,
             )
 
+    def reject_spoof(self, session_id: str) -> int | None:
+        """Close the challenge as SPOOF_DETECTED; returns the verification attempt id."""
+        with self._lock:
+            session = self.repository.get_session(session_id)
+            if not session or session["state"] != "ACTIVE":
+                return None
+            return self._reject(session, "SPOOF_DETECTED", "FAILED")
+
     def expire(self, session_id: str) -> None:
         session = self.repository.get_session(session_id)
         if session and session["state"] == "ACTIVE":

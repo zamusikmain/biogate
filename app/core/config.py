@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # Extra limits for frames that become a stored template (enrollment and biometric updates).
     enrollment_max_yaw: float = Field(default=0.35, ge=0.05, le=1.0)
     enrollment_max_roll_degrees: float = Field(default=20.0, ge=1.0, le=45.0)
+    # Passive anti-spoofing: minimum MiniFASNet live probability for every frame after face detection.
+    anti_spoofing_enabled: bool = True
+    anti_spoofing_threshold: float = Field(default=0.80, ge=0.5, le=0.99)
     challenge_ttl_seconds: int = Field(default=120, ge=30, le=600)
     challenge_cooldown_ms: int = Field(default=200, ge=200, le=3000)
     head_baseline_frames: int = Field(default=3, ge=2, le=8)

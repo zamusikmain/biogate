@@ -207,6 +207,8 @@ $('v3-settings-form').onsubmit = async event => {
     identification_threshold: Number(values.identification_threshold),
     identification_ambiguity_margin: Number(values.identification_ambiguity_margin),
     duplicate_biometric_threshold: Number(values.duplicate_biometric_threshold),
+    anti_spoofing_enabled: form.anti_spoofing_enabled.checked,
+    anti_spoofing_threshold: Number(values.anti_spoofing_threshold),
   };
   try {
     await api('/api/v3/admin/settings', jsonOptions('PUT', payload));

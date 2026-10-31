@@ -3,22 +3,44 @@ import numpy as np
 from numpy.typing import NDArray
 
 from app.core.config import Settings
+from app.services.biometrics.anti_spoofing import (
+    MINIFASNET_V1SE_SCALE,
+    MINIFASNET_V2_SCALE,
+    AntiSpoofingService,
+)
 from app.services.biometrics.detection import FaceDetector
 from app.services.biometrics.embedding import EmbeddingService, aggregate, cosine_similarity
 from app.services.biometrics.errors import BiometricError
 from app.services.biometrics.landmarks import EyeGeometryService
 from app.services.biometrics.liveness import LivenessService
-from app.services.biometrics.model_store import FACE_LANDMARKER, SFACE, YUNET, ModelStore
-from app.services.biometrics.models import FrameAnalysis, FrameResult, LivenessResult
+from app.services.biometrics.model_store import (
+    FACE_LANDMARKER,
+    MINIFASNET_V1SE,
+    MINIFASNET_V2,
+    SFACE,
+    YUNET,
+    ModelStore,
+)
+from app.services.biometrics.models import FaceObservation, FrameAnalysis, FrameResult, LivenessResult
 from app.services.biometrics.quality import EnrollmentPoseGate, QualityService
 
 
 class BiometricPipeline:
+    # None only for pipelines assembled piecemeal in tests; production always loads the models.
+    anti_spoofing: AntiSpoofingService | None = None
+
     def __init__(self, settings: Settings):
         store = ModelStore(settings.model_cache)
         self.detector = FaceDetector(store.ensure(YUNET))
         self.embedder = EmbeddingService(store.ensure(SFACE))
         self.eye_geometry = EyeGeometryService(store.ensure(FACE_LANDMARKER))
+        self.anti_spoofing = AntiSpoofingService.from_onnx(
+            [
+                (store.ensure(MINIFASNET_V2), MINIFASNET_V2_SCALE),
+                (store.ensure(MINIFASNET_V1SE), MINIFASNET_V1SE_SCALE),
+            ],
+            settings,
+        )
         self.quality = QualityService(
             settings.min_face_pixels,
             settings.min_sharpness,
@@ -55,8 +77,14 @@ class BiometricPipeline:
         pose_reason = self.pose_gate.evaluate(observation) if enrollment else None
         if pose_reason:
             raise BiometricError(pose_reason, "Look straight at the camera for enrollment")
+        self._check_spoof(image, observation)
         embedding = self.embedder.extract(image, observation)
         return FrameResult(embedding, quality, observation)
+
+    def _check_spoof(self, image: NDArray[np.uint8], observation: FaceObservation) -> None:
+        """Reject photos and screens after detection and before any embedding is compared."""
+        if self.anti_spoofing is not None:
+            self.anti_spoofing.check(image, observation)
 
     def analyze_frame(self, data: bytes) -> FrameAnalysis:
         return self._analyze_frame(data, include_embedding=True)
@@ -75,6 +103,7 @@ class BiometricPipeline:
         quality = self.quality.evaluate(image, observation)
         if not quality.accepted:
             raise BiometricError(quality.reason_code, "Image quality check failed")
+        self._check_spoof(image, observation)
         embedding = self.embedder.extract(image, observation) if include_embedding else np.empty(0, dtype=np.float32)
         ratios = self.eye_geometry.eye_aspect_ratios(image) if analyze_eyes else None
         left_ear, right_ear = ratios if ratios else (None, None)

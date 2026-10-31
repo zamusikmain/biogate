@@ -9,14 +9,17 @@ from app.api.dependencies import (
     get_challenge_service,
     get_pipeline,
     get_repository,
+    get_spoof_events,
 )
 from app.api.routes import read_images
 from app.core.config import Settings
 from app.schemas.api import ChallengeCreateRequest, ChallengeResponse, FrameStatusResponse
+from app.services.biometrics.anti_spoofing import SpoofDetectedError
 from app.services.biometrics.errors import BiometricError
 from app.services.biometrics.pipeline import BiometricPipeline
 from app.services.challenges import ChallengeService
 from app.services.repository import Repository
+from app.services.spoof_events import SpoofEventRecorder
 
 router = APIRouter(prefix="/api/verification-sessions", tags=["Realtime verification"])
 
@@ -71,6 +74,8 @@ async def analyze_frame(
     pipeline: Annotated[BiometricPipeline, Depends(get_pipeline)],
     challenges: Annotated[ChallengeService, Depends(get_challenge_service)],
     settings: Annotated[Settings, Depends(get_app_settings)],
+    repository: Annotated[Repository, Depends(get_repository)],
+    spoof_events: Annotated[SpoofEventRecorder, Depends(get_spoof_events)],
 ) -> FrameStatusResponse:
     payload = (await read_images([frame], settings))[0]
     started = time.perf_counter()
@@ -90,6 +95,12 @@ async def analyze_frame(
             debug["analysisDurationMs"] = round(analysis_elapsed, 2)
             debug["backendDurationMs"] = round((time.perf_counter() - started) * 1000, 2)
         return FrameStatusResponse(**result)
+    except SpoofDetectedError as error:
+        session = repository.get_session(session_id)
+        challenges.reject_spoof(session_id)
+        user_id = int(session["user_id"]) if session else None
+        spoof_events.record(error, "VERIFICATION", user_id, metadata={"challenge_id": session_id})
+        raise HTTPException(403, detail={"reason_code": error.reason_code, "message": error.message}) from error
     except BiometricError as error:
         raise HTTPException(422, detail={"reason_code": error.reason_code, "message": error.message}) from error
     except KeyError as error:

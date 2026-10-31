@@ -20,6 +20,7 @@ from app.api.dependencies import (
     get_face_login_service,
     get_pipeline,
     get_repository,
+    get_spoof_events,
     require_account_admin,
     require_account_csrf,
     require_account_session,
@@ -45,12 +46,14 @@ from app.schemas.v3 import (
 )
 from app.services.account_auth import ACCOUNT_COOKIE_NAME, AccountAuthError, AccountAuthService, AccountSession
 from app.services.biometric_workflow import BiometricWorkflowError, BiometricWorkflowService
+from app.services.biometrics.anti_spoofing import SpoofDetectedError
 from app.services.biometrics.embedding import aggregate
 from app.services.biometrics.errors import BiometricError
 from app.services.biometrics.pipeline import BiometricPipeline
 from app.services.face_login import FaceLoginService
 from app.services.repository import Repository
 from app.services.risk import annotate_risk
+from app.services.spoof_events import SpoofEventRecorder
 from app.services.storage import BackupService, EvidenceStorage
 
 logger = logging.getLogger("biogate.liveness")
@@ -68,6 +71,8 @@ V3_RUNTIME_SETTINGS = (
     "identification_ambiguity_margin",
     "duplicate_biometric_threshold",
     "recovery_max_attempts",
+    "anti_spoofing_enabled",
+    "anti_spoofing_threshold",
 )
 
 
@@ -237,6 +242,7 @@ async def analyze_face_challenge(
     auth: Annotated[AccountAuthService, Depends(get_account_auth_service)],
     evidence: Annotated[EvidenceStorage, Depends(get_evidence_storage)],
     settings: Annotated[Settings, Depends(get_app_settings)],
+    spoof_events: Annotated[SpoofEventRecorder, Depends(get_spoof_events)],
 ) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
     content_type = (frame.content_type or "").lower()
@@ -264,6 +270,31 @@ async def analyze_face_challenge(
                     "inference_time_ms": round(analysis_duration_ms, 2),
                 },
             )
+    except SpoofDetectedError as error:
+        # The challenge is dropped, so no later frame can finish it and create a session.
+        state = service.discard(challenge_id)
+        target_user_id = state.target_user_id if state else None
+        address, agent = _client(request)
+        event_id = repository.add_access_event(
+            {
+                "user_id": target_user_id,
+                "method": "FACE",
+                "result": "DENIED",
+                "reason": "SPOOF_DETECTED",
+                "session_id": None,
+                "liveness_score": 0.0,
+                "client_address": address,
+                "user_agent": agent,
+            }
+        )
+        spoof_events.record(
+            error,
+            "PASSWORD_RECOVERY" if state and state.mode == "RECOVERY" else "FACE_LOGIN",
+            target_user_id,
+            event_id,
+            {"challenge_id": challenge_id},
+        )
+        raise HTTPException(403, detail={"reason_code": error.reason_code}) from error
     except BiometricError as error:
         raise HTTPException(422, detail={"reason_code": error.reason_code}) from error
     except KeyError as error:
@@ -397,14 +428,18 @@ def read_notification(
 @router.post("/user/biometric-frame")
 async def validate_own_biometric_frame(
     photo: Annotated[UploadFile, File()],
-    _: Annotated[AccountSession, Depends(require_full_account_session)],
+    session: Annotated[AccountSession, Depends(require_full_account_session)],
     pipeline: Annotated[BiometricPipeline, Depends(get_pipeline)],
     settings: Annotated[Settings, Depends(get_app_settings)],
+    spoof_events: Annotated[SpoofEventRecorder, Depends(get_spoof_events)],
 ) -> dict[str, Any]:
     """Ephemeral capture feedback; never stores or approves a biometric template."""
     try:
         data = await read_enrollment_photo(photo, settings)
         frame = pipeline.process_enrollment_frame(data)
+    except SpoofDetectedError as error:
+        spoof_events.record(error, "BIOMETRIC_CAPTURE", session.user_id, preview=True)
+        return {"accepted": False, "reason_code": error.reason_code}
     except BiometricError as error:
         return {"accepted": False, "reason_code": error.reason_code}
     x, y, width, height = frame.observation.box
@@ -423,6 +458,7 @@ async def submit_biometric_request(
     pipeline: Annotated[BiometricPipeline, Depends(get_pipeline)],
     evidence: Annotated[EvidenceStorage, Depends(get_evidence_storage)],
     settings: Annotated[Settings, Depends(get_app_settings)],
+    spoof_events: Annotated[SpoofEventRecorder, Depends(get_spoof_events)],
 ) -> dict[str, Any]:
     if not settings.min_enrollment_frames <= len(photos) <= settings.max_enrollment_frames:
         raise HTTPException(422, detail={"reason_code": "INVALID_FRAME_COUNT"})
@@ -433,6 +469,9 @@ async def submit_biometric_request(
             data = await read_enrollment_photo(photo, settings)
             frames.append(pipeline.process_enrollment_frame(data))
             source_data.append((data, photo.content_type or "image/jpeg"))
+        except SpoofDetectedError as error:
+            spoof_events.record(error, "BIOMETRIC_REQUEST", session.user_id)
+            raise HTTPException(422, detail={"reason_code": error.reason_code}) from error
         except BiometricError as error:
             raise HTTPException(422, detail={"reason_code": error.reason_code}) from error
     template = aggregate([item.embedding for item in frames])

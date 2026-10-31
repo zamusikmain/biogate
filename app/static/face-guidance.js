@@ -57,6 +57,8 @@
     if (quality[code]) return { state: 'INVALID', key: quality[code], recoverable: true };
     if (['NotAllowedError', 'SecurityError'].includes(error?.name)) return { state: 'NEUTRAL', key: 'cameraDenied', detail: 'retryDetail' };
     if (['NotFoundError', 'NotReadableError', 'OverconstrainedError'].includes(error?.name)) return { state: 'NEUTRAL', key: 'cameraUnavailable', detail: 'retryDetail' };
+    // Not recoverable: the server has already closed the challenge.
+    if (code === 'SPOOF_DETECTED') return { state: 'DENIED', key: 'spoof', detail: 'spoofDetail' };
     if (['CHALLENGE_TIMEOUT', 'ENROLLMENT_TIMEOUT'].includes(code)) return { state: 'NEUTRAL', key: 'timeout', detail: 'retryDetail' };
     if (error?.status === 429) return { state: 'NEUTRAL', key: 'limited' };
     return { state: 'NEUTRAL', key: 'failed', detail: 'retryDetail', technical: true };

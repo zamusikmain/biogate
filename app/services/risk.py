@@ -34,14 +34,14 @@ RISK_RULES = (
     RiskRule("REPEATED_UNKNOWN_FACE", frozenset({"UNKNOWN_FACE"}), 3, timedelta(minutes=10), "HIGH"),
     RiskRule(
         "REPEATED_BIOMETRIC_FAILURES",
-        frozenset({"MULTIPLE_FAILED_FACE_ATTEMPTS", "LIVENESS_FAILED", "FACE_LOGIN_FAILED"}),
+        frozenset({"MULTIPLE_FAILED_FACE_ATTEMPTS", "LIVENESS_FAILED", "FACE_LOGIN_FAILED", "SPOOF_DETECTED"}),
         2,
         timedelta(minutes=10),
         "MEDIUM",
     ),
     RiskRule(
         "REPEATED_BIOMETRIC_FAILURES",
-        frozenset({"MULTIPLE_FAILED_FACE_ATTEMPTS", "LIVENESS_FAILED", "FACE_LOGIN_FAILED"}),
+        frozenset({"MULTIPLE_FAILED_FACE_ATTEMPTS", "LIVENESS_FAILED", "FACE_LOGIN_FAILED", "SPOOF_DETECTED"}),
         3,
         timedelta(minutes=10),
         "HIGH",

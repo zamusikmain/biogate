@@ -31,8 +31,8 @@ def test_login_loads_guidance_before_controller_and_is_not_cached(client: TestCl
     assert response.status_code == 200
     assert "no-store" in response.headers["cache-control"]
     text = response.text
-    assert text.index("face-guidance-locales.js?v=5") < text.index("face-guidance.js?v=5")
-    assert text.index("face-guidance.js?v=5") < text.index("login-v3.js?v=5")
+    assert text.index("face-guidance-locales.js?v=6") < text.index("face-guidance.js?v=6")
+    assert text.index("face-guidance.js?v=6") < text.index("login-v3.js?v=5")
     for obsolete in ('id="camera-action"', 'id="camera-progress"', 'id="face-result"'):
         assert obsolete not in text
     assert client.get("/__qa/report").status_code == 404
