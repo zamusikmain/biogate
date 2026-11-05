@@ -203,7 +203,7 @@ async function loadUsers() {
     if (role) query.set('role', role);
     if (biometric) query.set('biometric', biometric);
     const users = await api(`/api/v3/admin/accounts?${query}`);
-    table('users-list', ['External ID', L.t('displayName'), L.t('role'), L.t('status'), L.t('biometrics'), L.t('actions')], users.map(user => [
+    table('users-list', [L.t('externalId'), L.t('displayName'), L.t('role'), L.t('status'), L.t('biometrics'), L.t('actions')], users.map(user => [
       esc(user.external_id), accountIdentityCell(user), badge(user.role), badge(user.status), user.biometric_template_id ? badge('ENROLLED') : '—',
       `<button data-open-account="${user.id}">${L.t('details')}</button> <button data-account-status="${user.id}" data-next-status="${user.status === 'ACTIVE' ? 'BLOCKED' : 'ACTIVE'}">${L.t(user.status === 'ACTIVE' ? 'block' : 'unblock')}</button> <button data-account-reset="${user.id}">${L.t('resetPassword')}</button>`,
     ]));
@@ -220,7 +220,7 @@ async function loadUsers() {
     return;
   }
   const users = await api('/api/admin/users');
-  table('users-list', ['User ID', L.t('displayName'), L.t('status'), L.t('biometrics'), L.t('created')], users.map(user => [
+  table('users-list', [L.t('externalId'), L.t('displayName'), L.t('status'), L.t('biometrics'), L.t('created')], users.map(user => [
     `<a href="/admin/users/${encodeURIComponent(user.external_id)}">${esc(user.external_id)}</a>`,
     esc(user.display_name), badge(user.status), user.enrolled_at ? badge('ENROLLED') : '—', date(user.created_at),
   ]));
@@ -318,7 +318,7 @@ async function openUser(id) {
   $('user-card').innerHTML = `
     <div class="detail-hero"><div><span class="section-label">USER / ${esc(user.external_id)}</span><h2>${esc(user.display_name)}</h2><p>${badge(user.status)} ${hasBiometrics ? badge('ENROLLED') : ''}</p></div>
     <div class="detail-actions"><button data-action="edit">${L.t('edit')}</button><button data-action="toggle">${L.t(user.status === 'BLOCKED' ? 'unblock' : 'block')}</button>${biometricActions}<button data-action="delete-user">${L.t('deleteUser')}</button></div></div>
-    <div class="profile-grid">${field('User ID', user.external_id)}${field(L.t('displayName'), user.display_name)}${field(L.t('status'), user.status)}${field(L.t('created'), date(user.created_at))}${biometricDetails}${field(L.t('lastVerification'), user.last_verification ? date(user.last_verification) : '—')}${field(L.t('successful'), user.successful || 0)}${field(L.t('rejectedCount'), user.rejected || 0)}</div>
+    <div class="profile-grid">${field(L.t('externalId'), user.external_id)}${field(L.t('displayName'), user.display_name)}${field(L.t('status'), user.status)}${field(L.t('created'), date(user.created_at))}${biometricDetails}${field(L.t('lastVerification'), user.last_verification ? date(user.last_verification) : '—')}${field(L.t('successful'), user.successful || 0)}${field(L.t('rejectedCount'), user.rejected || 0)}</div>
     ${emptyState}
     <div class="data-card"><div class="card-heading"><h2>${L.t('history')}</h2><select id="history-filter"><option value="">${L.t('all')}</option><option value="VERIFIED">${L.t('successful')}</option><option value="REJECTED">${L.t('rejectedCount')}</option><option value="LIVENESS_FAILED">${L.t('livenessFailure')}</option><option value="IMAGE_BLURRY">${L.t('qualityFailure')}</option><option value="FACE_MISMATCH">${L.t('faceMismatch')}</option></select></div><div id="user-history"></div></div>`;
   renderHistory(historyRows);
@@ -638,7 +638,7 @@ $('create-user').onsubmit = async event => {
         ? { password_mode: 'PERMANENT', new_password: password, confirmation: values.confirmation }
         : { password_mode: 'TEMPORARY', temporary_password: temporary || null, generate_temporary_password: !temporary };
       const user = await api('/api/v3/admin/accounts', jsonOptions('POST', {
-        external_id: values.external_id, login: values.login || values.external_id,
+        external_id: values.external_id?.trim() || null, login: values.login.trim(),
         full_name: values.display_name, employee_id: values.employee_id || null,
         department: values.department, position: values.position, role: values.role,
         status: values.status, comment: values.comment,
