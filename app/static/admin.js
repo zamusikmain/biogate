@@ -156,46 +156,46 @@ function show(view) {
 }
 
 async function loadDashboard() {
-    const data = await api('/api/v3/admin/dashboard');
-    const stats = data.metrics;
-    const items = [
-      ['totalUsers', stats.total_users], ['active', stats.active_users], ['blocked', stats.blocked_users],
-      ['disabled', stats.disabled_users], ['enrolledUsers', stats.enrolled_users],
-      ['successful', stats.successful_today], ['rejectedCount', stats.denied_today],
-      ['unknown', stats.unknown_today], ['pendingBiometricRequests',stats.pending_biometric_requests], ['securityEvents', stats.security_alerts],
-    ];
-    $('admin-stats').innerHTML = items.map(([key, value]) => `<div class="metric-card"><span>${L.t(key)}</span><strong>${value || 0}</strong></div>`).join('');
-    table('recent-events', [L.t('date'),L.t('photo'), L.t('user'), L.t('method'), L.t('result')], data.recent_access.map(event => [date(event.timestamp),event.photo_id?evidenceThumbnail(event.photo_id):L.t('photoAbsent'),accountIdentityCell(event), esc(humanMethod(event.method)), badge(event.result)]));bindEvidenceErrors();document.querySelectorAll('[data-access-photo]').forEach(button=>button.onclick=()=>openPhotoViewer([button.dataset.accessPhoto],0));
-    const health = await api('/api/v3/admin/system-health');
-    $('system-health').innerHTML = `<div class="metric-grid">${Object.entries(health.components).map(([name, value]) => `<div class="metric-card"><span>${esc(name)}</span><strong>${badge(value)}</strong></div>`).join('')}</div><p>${L.t('activeStorage')}: ${health.storage.active.files} · ${Math.round(health.storage.active.size_bytes / 1024)} KB &nbsp; ${L.t('archive')}: ${health.storage.archive.files} · ${Math.round(health.storage.archive.size_bytes / 1024)} KB</p>`;
+  const data = await api('/api/v3/admin/dashboard');
+  const stats = data.metrics;
+  const items = [
+    ['totalUsers', stats.total_users], ['active', stats.active_users], ['blocked', stats.blocked_users],
+    ['disabled', stats.disabled_users], ['enrolledUsers', stats.enrolled_users],
+    ['successful', stats.successful_today], ['rejectedCount', stats.denied_today],
+    ['unknown', stats.unknown_today], ['pendingBiometricRequests',stats.pending_biometric_requests], ['securityEvents', stats.security_alerts],
+  ];
+  $('admin-stats').innerHTML = items.map(([key, value]) => `<div class="metric-card"><span>${L.t(key)}</span><strong>${value || 0}</strong></div>`).join('');
+  table('recent-events', [L.t('date'),L.t('photo'), L.t('user'), L.t('method'), L.t('result')], data.recent_access.map(event => [date(event.timestamp),event.photo_id?evidenceThumbnail(event.photo_id):L.t('photoAbsent'),accountIdentityCell(event), esc(humanMethod(event.method)), badge(event.result)]));bindEvidenceErrors();document.querySelectorAll('[data-access-photo]').forEach(button=>button.onclick=()=>openPhotoViewer([button.dataset.accessPhoto],0));
+  const health = await api('/api/v3/admin/system-health');
+  $('system-health').innerHTML = `<div class="metric-grid">${Object.entries(health.components).map(([name, value]) => `<div class="metric-card"><span>${esc(name)}</span><strong>${badge(value)}</strong></div>`).join('')}</div><p>${L.t('activeStorage')}: ${health.storage.active.files} · ${Math.round(health.storage.active.size_bytes / 1024)} KB &nbsp; ${L.t('archive')}: ${health.storage.archive.files} · ${Math.round(health.storage.archive.size_bytes / 1024)} KB</p>`;
 }
 
 async function loadUsers() {
-    $('users-list').innerHTML = `<div class="data-card">${L.t('loading')}</div>`;
-    const search = $('user-search')?.value || '';
-    const status = $('user-status-filter')?.value || '';
-    const role = $('user-role-filter')?.value || '';
-    const biometric = $('user-biometric-filter')?.value || '';
-    const query = new URLSearchParams({ limit: String(adminPageSize), offset: String(usersPage * adminPageSize) });
-    if (search) query.set('search', search);
-    if (status) query.set('status', status);
-    if (role) query.set('role', role);
-    if (biometric) query.set('biometric', biometric);
-    const users = await api(`/api/v3/admin/accounts?${query}`);
-    table('users-list', ['External ID', L.t('displayName'), L.t('role'), L.t('status'), L.t('biometrics'), L.t('actions')], users.map(user => [
-      esc(user.external_id), accountIdentityCell(user), badge(user.role), badge(user.status), user.biometric_template_id ? badge('ENROLLED') : '—',
-      `<button data-open-account="${user.id}">${L.t('details')}</button> <button data-account-status="${user.id}" data-next-status="${user.status === 'ACTIVE' ? 'BLOCKED' : 'ACTIVE'}">${L.t(user.status === 'ACTIVE' ? 'block' : 'unblock')}</button> <button data-account-reset="${user.id}">${L.t('resetPassword')}</button>`,
-    ]));
-    renderAdminPager('users-list', usersPage, users.length, page => { usersPage = page; loadUsers(); });
-    document.querySelectorAll('[data-open-account]').forEach(button => button.onclick = event => { event.stopPropagation(); openV3User(Number(button.dataset.openAccount)); });
-    document.querySelectorAll('[data-account-status]').forEach(button => button.onclick = async event => {
-      event.stopPropagation();
-      const reason = await adminAsk({title:L.t(button.dataset.nextStatus==='BLOCKED'?'block':'unblock'),label:L.t('actionReason'),required:true,confirmKey:'save',danger:button.dataset.nextStatus==='BLOCKED'}); if (reason===null) return;
-      await api(`/api/v3/admin/accounts/${button.dataset.accountStatus}`, jsonOptions('PATCH', { status: button.dataset.nextStatus, reason }));
-      await loadUsers();
-    });
-    document.querySelectorAll('[data-account-reset]').forEach(button => button.onclick = event => { event.stopPropagation(); openPasswordResetDialog(Number(button.dataset.accountReset)); });
-    localizePresentationOptions();
+  $('users-list').innerHTML = `<div class="data-card">${L.t('loading')}</div>`;
+  const search = $('user-search')?.value || '';
+  const status = $('user-status-filter')?.value || '';
+  const role = $('user-role-filter')?.value || '';
+  const biometric = $('user-biometric-filter')?.value || '';
+  const query = new URLSearchParams({ limit: String(adminPageSize), offset: String(usersPage * adminPageSize) });
+  if (search) query.set('search', search);
+  if (status) query.set('status', status);
+  if (role) query.set('role', role);
+  if (biometric) query.set('biometric', biometric);
+  const users = await api(`/api/v3/admin/accounts?${query}`);
+  table('users-list', [L.t('externalId'), L.t('displayName'), L.t('role'), L.t('status'), L.t('biometrics'), L.t('actions')], users.map(user => [
+    esc(user.external_id), accountIdentityCell(user), badge(user.role), badge(user.status), user.biometric_template_id ? badge('ENROLLED') : '—',
+    `<button data-open-account="${user.id}">${L.t('details')}</button> <button data-account-status="${user.id}" data-next-status="${user.status === 'ACTIVE' ? 'BLOCKED' : 'ACTIVE'}">${L.t(user.status === 'ACTIVE' ? 'block' : 'unblock')}</button> <button data-account-reset="${user.id}">${L.t('resetPassword')}</button>`,
+  ]));
+  renderAdminPager('users-list', usersPage, users.length, page => { usersPage = page; loadUsers(); });
+  document.querySelectorAll('[data-open-account]').forEach(button => button.onclick = event => { event.stopPropagation(); openV3User(Number(button.dataset.openAccount)); });
+  document.querySelectorAll('[data-account-status]').forEach(button => button.onclick = async event => {
+    event.stopPropagation();
+    const reason = await adminAsk({title:L.t(button.dataset.nextStatus==='BLOCKED'?'block':'unblock'),label:L.t('actionReason'),required:true,confirmKey:'save',danger:button.dataset.nextStatus==='BLOCKED'}); if (reason===null) return;
+    await api(`/api/v3/admin/accounts/${button.dataset.accountStatus}`, jsonOptions('PATCH', { status: button.dataset.nextStatus, reason }));
+    await loadUsers();
+  });
+  document.querySelectorAll('[data-account-reset]').forEach(button => button.onclick = event => { event.stopPropagation(); openPasswordResetDialog(Number(button.dataset.accountReset)); });
+  localizePresentationOptions();
 }
 
 async function openV3User(id, tab = 'overview') {
@@ -491,32 +491,30 @@ $('create-user').onsubmit = async event => {
   submit.textContent = L.t('creating');
   try {
     const values = Object.fromEntries(new FormData(form));
-    {
-      const permanent = values.password_mode === 'PERMANENT';
-      const temporary = values.temporary_password;
-      const password = permanent ? values.new_password : temporary;
-      if (permanent && !password) { toast('PERMANENT_PASSWORD_REQUIRED'); return; }
-      const policyError = password ? window.BioGatePasswordPolicy.validate(password) : '';
-      if (policyError) { toast(policyError); return; }
-      if (permanent && password !== values.confirmation) { toast('PASSWORD_CONFIRMATION_MISMATCH'); return; }
-      const passwordFields = permanent
-        ? { password_mode: 'PERMANENT', new_password: password, confirmation: values.confirmation }
-        : { password_mode: 'TEMPORARY', temporary_password: temporary || null, generate_temporary_password: !temporary };
-      const user = await api('/api/v3/admin/accounts', jsonOptions('POST', {
-        external_id: values.external_id, login: values.login || values.external_id,
-        full_name: values.display_name, employee_id: values.employee_id || null,
-        department: values.department, position: values.position, role: values.role,
-        status: values.status, comment: values.comment,
-        ...passwordFields,
-      }));
-      if (user.temporary_password) {
-        showOneTimePassword(user.temporary_password);
-      }
-      form.reset();
-      syncCreatePasswordMode();
-      toast('userCreated');
-      await openV3User(Number(user.id), 'overview');
+    const permanent = values.password_mode === 'PERMANENT';
+    const temporary = values.temporary_password;
+    const password = permanent ? values.new_password : temporary;
+    if (permanent && !password) { toast('PERMANENT_PASSWORD_REQUIRED'); return; }
+    const policyError = password ? window.BioGatePasswordPolicy.validate(password) : '';
+    if (policyError) { toast(policyError); return; }
+    if (permanent && password !== values.confirmation) { toast('PASSWORD_CONFIRMATION_MISMATCH'); return; }
+    const passwordFields = permanent
+      ? { password_mode: 'PERMANENT', new_password: password, confirmation: values.confirmation }
+      : { password_mode: 'TEMPORARY', temporary_password: temporary || null, generate_temporary_password: !temporary };
+    const user = await api('/api/v3/admin/accounts', jsonOptions('POST', {
+      external_id: values.external_id?.trim() || null, login: values.login.trim(),
+      full_name: values.display_name, employee_id: values.employee_id || null,
+      department: values.department, position: values.position, role: values.role,
+      status: values.status, comment: values.comment,
+      ...passwordFields,
+    }));
+    if (user.temporary_password) {
+      showOneTimePassword(user.temporary_password);
     }
+    form.reset();
+    syncCreatePasswordMode();
+    toast('userCreated');
+    await openV3User(Number(user.id), 'overview');
   } catch (error) {
     form.elements.temporary_password.value = '';
     form.elements.new_password.value = '';
