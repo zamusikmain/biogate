@@ -43,8 +43,25 @@ class AccountCreateRequest(BaseModel):
     password_enabled: bool = True
     face_enabled: bool = True
     biometric_recovery_enabled: bool = True
+    password_mode: str = Field(default="TEMPORARY", pattern=r"^(TEMPORARY|PERMANENT)$")
     temporary_password: SecretStr | None = None
     generate_temporary_password: bool = False
+    new_password: SecretStr | None = None
+    confirmation: SecretStr | None = None
+
+    @model_validator(mode="after")
+    def validate_password_mode(self) -> "AccountCreateRequest":
+        permanent = self.new_password.get_secret_value() if self.new_password else ""
+        confirmation = self.confirmation.get_secret_value() if self.confirmation else ""
+        if self.password_mode == "TEMPORARY":  # noqa: S105 -- mode name, not a value
+            if permanent or confirmation:
+                raise ValueError("PASSWORD_MODE_INVALID")
+        else:
+            if self.generate_temporary_password or self.temporary_password or not permanent:
+                raise ValueError("PERMANENT_PASSWORD_REQUIRED")
+            if permanent != confirmation:
+                raise ValueError("PASSWORD_CONFIRMATION_MISMATCH")
+        return self
 
     @field_validator("external_id", "login", "full_name", mode="before")
     @classmethod

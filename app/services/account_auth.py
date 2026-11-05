@@ -282,6 +282,7 @@ class AccountAuthService:
             {"reason": reason, "admin_id": admin_id, "administrator": administrator, "mode": mode},
         )
         self.repository.revoke_user_sessions(user_id, "PASSWORD_RESET_BY_ADMIN")
+        self._clear_user_password_failures(user_id)
         self.repository.add_security_event(
             "PASSWORD_RESET",
             "WARNING",
@@ -324,8 +325,14 @@ class AccountAuthService:
         user_id = int(row["user_id"])
         self.repository.set_password_hash(user_id, password_hash, False, "PASSWORD_SELF_SERVICE_RESET")
         self.repository.revoke_user_sessions(user_id, "PASSWORD_SELF_SERVICE_RESET")
+        self._clear_user_password_failures(user_id)
         self.repository.add_security_event("PASSWORD_RESET", "INFO", user_id, {"method": "BIOMETRIC"})
         self.repository.add_notification(user_id, None, "PASSWORD_RESET", "PASSWORD_SELF_SERVICE_RESET")
+
+    def _clear_user_password_failures(self, user_id: int) -> None:
+        user = self.repository.get_user_by_id(user_id)
+        if user and user.get("login"):
+            self.clear_password_failures(str(user["login"]))
 
     @staticmethod
     def _token_hash(token: str) -> str:
@@ -341,7 +348,23 @@ class AccountAuthService:
     def _rate_key(self, login: str, client_address: str) -> str:
         material = f"{client_address}|{login.casefold()}"
         secret = self.settings.session_secret.get_secret_value()
-        return hmac.new(secret.encode(), material.encode(), hashlib.sha256).hexdigest()
+        digest = hmac.new(secret.encode(), material.encode(), hashlib.sha256).hexdigest()
+        return f"{self._login_rate_prefix(login)}{digest}"
+
+    def _login_rate_prefix(self, login: str) -> str:
+        secret = self.settings.session_secret.get_secret_value()
+        return hmac.new(secret.encode(), f"login|{login.casefold()}".encode(), hashlib.sha256).hexdigest() + ":"
+
+    def clear_password_failures(self, login: str) -> None:
+        """Forget in-memory failed attempts for a login on every client address.
+
+        A new password makes earlier failures irrelevant; without this the user stays
+        throttled after an admin reset and cannot sign in with the new password.
+        """
+        prefix = self._login_rate_prefix(login)
+        with self._rate_lock:
+            for key in [key for key in self._password_failures if key.startswith(prefix)]:
+                del self._password_failures[key]
 
     def _password_rate_limited(self, key: str) -> bool:
         now = datetime.now(UTC)

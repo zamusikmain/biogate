@@ -489,20 +489,32 @@ def create_account(
     repository: Annotated[Repository, Depends(get_repository)],
     auth: Annotated[AccountAuthService, Depends(get_account_auth_service)],
 ) -> dict[str, Any]:
-    password = payload.temporary_password.get_secret_value() if payload.temporary_password else None
+    temporary = payload.password_mode == "TEMPORARY"  # noqa: S105 -- mode name, not a value
     generated = None
-    if payload.generate_temporary_password:
-        generated = auth.generate_temporary_password()
-        password = generated
+    if not temporary:
+        password = payload.new_password.get_secret_value() if payload.new_password else None
+    else:
+        password = payload.temporary_password.get_secret_value() if payload.temporary_password else None
+        if payload.generate_temporary_password:
+            generated = auth.generate_temporary_password()
+            password = generated
     if not password:
         raise HTTPException(422, detail={"reason_code": "TEMPORARY_PASSWORD_REQUIRED"})
     try:
         password_hash = auth.hash_password(password)
         user = repository.create_account(
             {
-                **payload.model_dump(exclude={"temporary_password", "generate_temporary_password"}),
+                **payload.model_dump(
+                    exclude={
+                        "password_mode",
+                        "temporary_password",
+                        "generate_temporary_password",
+                        "new_password",
+                        "confirmation",
+                    }
+                ),
                 "password_hash": password_hash,
-                "must_change_password": True,
+                "must_change_password": temporary,
             }
         )
     except AccountAuthError as error:

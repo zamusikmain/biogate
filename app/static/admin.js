@@ -601,6 +601,19 @@ function esc(value) { return String(value ?? '').replace(/[&<>'"]/g, char => ({ 
 function jsonOptions(method, body) { return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }; }
 function adminAsk({title,message='',label='',required=false,value='',confirmKey='continue',danger=false}={}){return new Promise(resolve=>{let dialog=$('admin-action-dialog');if(!dialog){dialog=document.createElement('dialog');dialog.id='admin-action-dialog';dialog.className='confirm-dialog';document.body.appendChild(dialog);}dialog.innerHTML=`<form method="dialog"><h2>${esc(title||L.t('confirmation'))}</h2>${message?`<p>${esc(message)}</p>`:''}${label?`<label class="dialog-field"><span>${esc(label)}</span><textarea data-admin-input ${required?'required':''}>${esc(value)}</textarea></label>`:''}<div class="confirm-actions"><button value="cancel">${L.t('cancel')}</button><button value="confirm" class="${danger?'danger':'primary-small'}">${L.t(confirmKey)}</button></div></form>`;const form=dialog.querySelector('form');form.addEventListener('submit',event=>{const input=dialog.querySelector('[data-admin-input]');if(event.submitter?.value==='confirm'&&required&&!input?.value.trim()){event.preventDefault();input?.focus();return;}});dialog.addEventListener('close',()=>resolve(dialog.returnValue==='confirm'?(dialog.querySelector('[data-admin-input]')?.value.trim()??''):null),{once:true});dialog.showModal();});}
 
+function syncCreatePasswordMode() {
+  const form = $('create-user');
+  const permanent = form.elements.password_mode.value === 'PERMANENT';
+  form.querySelector('[data-temporary-row]').hidden = permanent;
+  form.querySelectorAll('[data-permanent-row]').forEach(row => { row.hidden = !permanent; });
+  form.elements.new_password.required = permanent;
+  form.elements.confirmation.required = permanent;
+  form.elements.temporary_password.value = '';
+  form.elements.new_password.value = '';
+  form.elements.confirmation.value = '';
+}
+$('create-user').elements.password_mode.onchange = syncCreatePasswordMode;
+
 document.querySelectorAll('.admin-nav button').forEach(button => button.onclick = () => show(button.dataset.view));
 document.querySelectorAll('[data-go]').forEach(button => button.onclick = () => show(button.dataset.go));
 $('create-user').onsubmit = async event => {
@@ -614,21 +627,28 @@ $('create-user').onsubmit = async event => {
   try {
     const values = Object.fromEntries(new FormData(form));
     if (accountAuth) {
+      const permanent = values.password_mode === 'PERMANENT';
       const temporary = values.temporary_password;
-      const policyError = temporary ? window.BioGatePasswordPolicy.validate(temporary) : '';
+      const password = permanent ? values.new_password : temporary;
+      if (permanent && !password) { toast('PERMANENT_PASSWORD_REQUIRED'); return; }
+      const policyError = password ? window.BioGatePasswordPolicy.validate(password) : '';
       if (policyError) { toast(policyError); return; }
+      if (permanent && password !== values.confirmation) { toast('PASSWORD_CONFIRMATION_MISMATCH'); return; }
+      const passwordFields = permanent
+        ? { password_mode: 'PERMANENT', new_password: password, confirmation: values.confirmation }
+        : { password_mode: 'TEMPORARY', temporary_password: temporary || null, generate_temporary_password: !temporary };
       const user = await api('/api/v3/admin/accounts', jsonOptions('POST', {
         external_id: values.external_id, login: values.login || values.external_id,
         full_name: values.display_name, employee_id: values.employee_id || null,
         department: values.department, position: values.position, role: values.role,
         status: values.status, comment: values.comment,
-        temporary_password: temporary || null,
-        generate_temporary_password: !temporary,
+        ...passwordFields,
       }));
       if (user.temporary_password) {
         showOneTimePassword(user.temporary_password);
       }
       form.reset();
+      syncCreatePasswordMode();
       toast('userCreated');
       await openV3User(Number(user.id), 'overview');
     } else {
@@ -637,6 +657,8 @@ $('create-user').onsubmit = async event => {
     }
   } catch (error) {
     form.elements.temporary_password.value = '';
+    form.elements.new_password.value = '';
+    form.elements.confirmation.value = '';
     toast(error.code || error.message);
   } finally {
     submit.disabled = false;
