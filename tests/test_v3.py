@@ -670,6 +670,124 @@ def test_temporary_password_requires_change_and_admin_reset_revokes_sessions(cli
     assert generated_password not in metadata
 
 
+@pytest.mark.parametrize("mode", ["TEMPORARY", "PERMANENT"])
+def test_admin_password_reset_lifts_login_throttle(client: TestClient, mode: str) -> None:
+    v3_admin_login(client)
+    created = client.post(
+        "/api/v3/admin/accounts",
+        json={
+            "external_id": "locked-1",
+            "login": "Locked-1",
+            "full_name": "Locked One",
+            "temporary_password": "Temporary-pass-123",
+        },
+    )
+    assert created.status_code == 201
+    user_id = created.json()["id"]
+    client.cookies.delete("biogate_session")
+    for _ in range(5):
+        failed = client.post("/api/v3/auth/password", json={"login": "Locked-1", "password": "Wrong-password-1"})
+        assert failed.json()["detail"]["reason_code"] == "INVALID_CREDENTIALS"
+    throttled = client.post("/api/v3/auth/password", json={"login": "Locked-1", "password": "Temporary-pass-123"})
+    assert throttled.status_code == 429
+
+    v3_admin_login(client)
+    replacement = "Reset-after-lockout-42!"
+    payload: dict[str, object] = {"mode": mode, "reason": "User locked out"}
+    if mode == "TEMPORARY":
+        payload["temporary_password"] = replacement
+    else:
+        payload.update(new_password=replacement, confirmation=replacement)
+    assert client.post(f"/api/v3/admin/accounts/{user_id}/reset-password", json=payload).status_code == 200
+    client.cookies.delete("biogate_session")
+
+    signed_in = client.post("/api/v3/auth/password", json={"login": "Locked-1", "password": replacement})
+    assert signed_in.status_code == 200
+    assert signed_in.json()["must_change_password"] is (mode == "TEMPORARY")
+
+
+def test_admin_password_reset_keeps_throttle_for_other_logins(client: TestClient) -> None:
+    v3_admin_login(client)
+    for login in ("reset-target", "bystander"):
+        created = client.post(
+            "/api/v3/admin/accounts",
+            json={"external_id": login, "login": login, "full_name": login, "temporary_password": "Temporary-pass-123"},
+        )
+        assert created.status_code == 201
+    target_id = client.app.state.repository.get_user_by_login("reset-target")["id"]
+    client.cookies.delete("biogate_session")
+    for _ in range(5):
+        client.post("/api/v3/auth/password", json={"login": "bystander", "password": "Wrong-password-1"})
+    v3_admin_login(client)
+    reset = client.post(
+        f"/api/v3/admin/accounts/{target_id}/reset-password",
+        json={"temporary_password": "Reset-pass-789!", "reason": "Support request"},
+    )
+    assert reset.status_code == 200
+    client.cookies.delete("biogate_session")
+    still_throttled = client.post(
+        "/api/v3/auth/password", json={"login": "bystander", "password": "Temporary-pass-123"}
+    )
+    assert still_throttled.status_code == 429
+
+
+def test_admin_can_create_account_with_permanent_password(client: TestClient) -> None:
+    v3_admin_login(client)
+    created = client.post(
+        "/api/v3/admin/accounts",
+        json={
+            "external_id": "permanent-1",
+            "login": "permanent-1",
+            "full_name": "Permanent One",
+            "password_mode": "PERMANENT",
+            "new_password": "Permanent-pass-456!",
+            "confirmation": "Permanent-pass-456!",
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["must_change_password"] == 0
+    assert "temporary_password" not in body
+    assert "new_password" not in body and "confirmation" not in body
+    client.cookies.delete("biogate_session")
+    signed_in = client.post("/api/v3/auth/password", json={"login": "permanent-1", "password": "Permanent-pass-456!"})
+    assert signed_in.status_code == 200
+    assert signed_in.json()["must_change_password"] is False
+    assert client.get("/api/v3/user/profile").status_code == 200
+
+
+@pytest.mark.parametrize(
+    "password_fields",
+    [
+        {"password_mode": "PERMANENT"},
+        {"password_mode": "PERMANENT", "new_password": "Permanent-pass-456!", "confirmation": "Permanent-pass-457!"},
+        {"password_mode": "PERMANENT", "new_password": "short", "confirmation": "short"},
+        {
+            "password_mode": "PERMANENT",
+            "new_password": "Permanent-pass-456!",
+            "confirmation": "Permanent-pass-456!",
+            "generate_temporary_password": True,
+        },
+        {
+            "password_mode": "TEMPORARY",
+            "temporary_password": "Temporary-pass-123",
+            "new_password": "Permanent-pass-456!",
+        },
+        {"password_mode": "SOMETHING", "temporary_password": "Temporary-pass-123"},
+    ],
+)
+def test_permanent_account_creation_rejects_invalid_password_input(
+    client: TestClient, password_fields: dict[str, object]
+) -> None:
+    v3_admin_login(client)
+    response = client.post(
+        "/api/v3/admin/accounts",
+        json={"external_id": "rejected-1", "login": "rejected-1", "full_name": "Rejected", **password_fields},
+    )
+    assert response.status_code == 422
+    assert client.app.state.repository.get_user_by_login("rejected-1") is None
+
+
 def test_admin_password_reset_reason_is_validated_persisted_and_safely_exposed(client: TestClient) -> None:
     v3_admin_login(client)
     created = client.post(
