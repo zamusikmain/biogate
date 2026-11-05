@@ -372,14 +372,14 @@ def test_admin_enrollment_method_selector_is_accessible_and_theme_safe() -> None
     assert "uploadPhotos:'Upload photos'" in locales
     asset_versions = {
         "styles.css": 8,
-        "admin-extra.css": 12,
+        "admin-extra.css": 13,
         "v3.css": 8,
-        "locales.js": 13,
-        "admin.js": 15,
+        "locales.js": 14,
+        "admin.js": 16,
     }
     for asset, version in asset_versions.items():
         assert f"/static/{asset}?v={version}" in template
-    assert template.index("styles.css?v=8") < template.index("admin-extra.css?v=12")
+    assert template.index("styles.css?v=8") < template.index("admin-extra.css?v=13")
 
     def contrast(foreground: str, background: str) -> float:
         def luminance(value: str) -> float:

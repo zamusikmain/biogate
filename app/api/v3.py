@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import logging
+import secrets
 import sqlite3
 import time
 from typing import Annotated, Any
@@ -498,6 +499,18 @@ def cancel_biometric_request(
     return {"cancelled": True}
 
 
+def _generate_external_id(repository: Repository) -> str:
+    """Opaque, stable identifier for accounts created without one.
+
+    It is deliberately unrelated to the login, so renaming a login never makes the
+    two fields disagree in a confusing way.
+    """
+    while True:
+        candidate = f"bg-{secrets.token_hex(6)}"
+        if not repository.get_user(candidate):
+            return candidate
+
+
 @router.post("/admin/accounts", status_code=201)
 def create_account(
     payload: AccountCreateRequest,
@@ -518,6 +531,7 @@ def create_account(
         raise HTTPException(422, detail={"reason_code": "TEMPORARY_PASSWORD_REQUIRED"})
     try:
         password_hash = auth.hash_password(password)
+        external_id = payload.external_id or _generate_external_id(repository)
         user = repository.create_account(
             {
                 **payload.model_dump(
@@ -529,6 +543,7 @@ def create_account(
                         "confirmation",
                     }
                 ),
+                "external_id": external_id,
                 "password_hash": password_hash,
                 "must_change_password": temporary,
             }
