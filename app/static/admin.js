@@ -167,7 +167,7 @@ async function loadDashboard() {
   $('admin-stats').innerHTML = items.map(([key, value]) => `<div class="metric-card"><span>${L.t(key)}</span><strong>${value || 0}</strong></div>`).join('');
   table('recent-events', [L.t('date'),L.t('photo'), L.t('user'), L.t('method'), L.t('result')], data.recent_access.map(event => [date(event.timestamp),event.photo_id?evidenceThumbnail(event.photo_id):L.t('photoAbsent'),accountIdentityCell(event), esc(humanMethod(event.method)), badge(event.result)]));bindEvidenceErrors();document.querySelectorAll('[data-access-photo]').forEach(button=>button.onclick=()=>openPhotoViewer([button.dataset.accessPhoto],0));
   const health = await api('/api/v3/admin/system-health');
-  $('system-health').innerHTML = `<div class="metric-grid">${Object.entries(health.components).map(([name, value]) => `<div class="metric-card"><span>${esc(name)}</span><strong>${badge(value)}</strong></div>`).join('')}</div><p>${L.t('activeStorage')}: ${health.storage.active.files} · ${Math.round(health.storage.active.size_bytes / 1024)} KB &nbsp; ${L.t('archive')}: ${health.storage.archive.files} · ${Math.round(health.storage.archive.size_bytes / 1024)} KB</p>`;
+  $('system-health').innerHTML = `<div class="metric-grid">${Object.entries(health.components).map(([name, value]) => `<div class="metric-card"><span>${esc(name)}</span><strong>${badge(value)}</strong></div>`).join('')}</div><p>${L.t('activeStorage')}: ${health.storage.active.files} · ${Math.round(health.storage.active.size_bytes / 1024)} KB &nbsp; ${L.t('archive')}: ${health.storage.archive.files} · ${Math.round(health.storage.archive.size_bytes / 1024)} KB &nbsp; ${L.t('freeDisk')}: ${(health.disk.free_bytes / 1073741824).toFixed(1)} GB</p>`;
 }
 
 async function loadUsers() {

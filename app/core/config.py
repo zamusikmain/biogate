@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     archive_dir: Path = Path("data/archive")
     backup_dir: Path = Path("data/backups")
     active_image_days: int = Field(default=60, ge=1, le=3650)
+    # Archiving, snapshot cleanup and the disk check run at startup and then on this
+    # interval; 0 keeps only the startup run.
+    maintenance_interval_seconds: int = Field(default=24 * 60 * 60, ge=0, le=7 * 24 * 60 * 60)
+    min_free_disk_mb: int = Field(default=1024, ge=0, le=1024 * 1024)
+    # Optional rotating JSON log file in addition to the console.
+    log_file: Path | None = None
+    log_max_bytes: int = Field(default=10 * 1024 * 1024, ge=64 * 1024, le=1024 * 1024 * 1024)
+    log_backup_count: int = Field(default=5, ge=1, le=100)
     admin_username: str = ""
     admin_password_hash: SecretStr = SecretStr("")
     session_secret: SecretStr = SecretStr("")
