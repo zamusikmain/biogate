@@ -1,8 +1,10 @@
 # One-command local start: venv on Python 3.11-3.13, dependencies, .env, server.
-#   powershell -ExecutionPolicy Bypass -File scripts\run.ps1 [-Dev] [-OpenBrowser] [-Port 8000]
+#   powershell -ExecutionPolicy Bypass -File scripts\run.ps1 [-Dev] [-OpenBrowser] [-BehindProxy] [-Port 8000]
+# -BehindProxy trusts X-Forwarded-For from a local TLS reverse proxy (docs/NETWORK.md).
 param(
     [switch]$Dev,
     [switch]$OpenBrowser,
+    [switch]$BehindProxy,
     [int]$Port = 8000
 )
 $ErrorActionPreference = "Stop"
@@ -56,4 +58,10 @@ Write-Host "BioGate: $url (admin console: ${url}admin). Press CTRL+C to stop."
 if ($OpenBrowser) {
     Start-Job -ScriptBlock { param($u) Start-Sleep -Seconds 5; Start-Process $u } -ArgumentList $url | Out-Null
 }
-& $venvPython -m uvicorn app.main:app --host 127.0.0.1 --port $Port
+$serverArgs = @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "$Port")
+if ($BehindProxy) {
+    # Only the proxy on this machine may set the client address.
+    $serverArgs += @("--proxy-headers", "--forwarded-allow-ips", "127.0.0.1")
+    Write-Host "Expecting a local HTTPS reverse proxy in front (see docs/NETWORK.md)."
+}
+& $venvPython @serverArgs
