@@ -9,10 +9,10 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.db.database import Database
-from app.main import cleanup_expired_attempt_snapshots
 from app.services.biometrics.embedding import serialize_embedding
 from app.services.biometrics.models import FaceObservation, FrameAnalysis, QualityResult
 from app.services.challenges import BlinkStateMachine, BlinkTemporalState, ChallengeService, EphemeralCapture
+from app.services.maintenance import cleanup_expired_attempt_snapshots
 from app.services.repository import Repository
 from tests.conftest import create_account, enroll_photos, record_verification
 

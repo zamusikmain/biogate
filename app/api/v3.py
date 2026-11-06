@@ -50,6 +50,7 @@ from app.services.biometrics.embedding import aggregate
 from app.services.biometrics.errors import BiometricError
 from app.services.biometrics.pipeline import BiometricPipeline
 from app.services.face_login import FaceLoginService
+from app.services.maintenance import disk_status
 from app.services.repository import Repository
 from app.services.risk import annotate_risk
 from app.services.storage import BackupService, EvidenceStorage
@@ -835,6 +836,7 @@ def system_health(
             "SELECT created_at,validation_status FROM backups WHERE kind='USER' ORDER BY created_at DESC LIMIT 1"
         ).fetchone()
     storage_rows = {row["storage_state"]: dict(row) for row in storage}
+    disk = disk_status(settings)
     return {
         "components": {
             "database": "OK" if database_ok else "ERROR",
@@ -843,7 +845,9 @@ def system_health(
             "mediapipe": "READY" if getattr(pipeline, "eye_geometry", None) else "ERROR",
             "active_storage": "OK" if settings.active_image_dir.parent.exists() else "WARNING",
             "archive": "OK" if settings.archive_dir.parent.exists() else "WARNING",
+            "disk": "WARNING" if disk["low"] else "OK",
         },
+        "disk": disk,
         "storage": {
             "active": storage_rows.get("ACTIVE", {"files": 0, "size_bytes": 0, "oldest": None, "newest": None}),
             "archive": storage_rows.get("ARCHIVED", {"files": 0, "size_bytes": 0, "oldest": None, "newest": None}),

@@ -1,11 +1,11 @@
+import asyncio
 import json
 import logging
 import sqlite3
 import time
 import uuid
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -28,6 +28,7 @@ from app.services.biometrics.pipeline import BiometricPipeline
 from app.services.challenges import ChallengeService
 from app.services.face_login import FaceLoginService
 from app.services.identification import IdentificationService
+from app.services.maintenance import maintenance_loop, run_maintenance
 from app.services.repository import Repository
 from app.services.storage import BackupService, EvidenceStorage
 
@@ -41,7 +42,7 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        configure_logging(config.debug)
+        configure_logging(config.debug, config.log_file, config.log_max_bytes, config.log_backup_count)
         database = Database(config.db_path)
         database.initialize()
         app.state.settings = config
@@ -53,7 +54,6 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
         ):
             directory.mkdir(parents=True, exist_ok=True)
         app.state.repository = Repository(database)
-        cleanup_expired_attempt_snapshots(app.state.repository, config)
         for setting_name in V3_RUNTIME_SETTINGS:
             stored = app.state.repository.get_setting(f"v3_{setting_name}")
             if stored is not None:
@@ -74,7 +74,19 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
             app.state.challenge_service,
             app.state.identification_service,
         )
-        yield
+        await asyncio.to_thread(run_maintenance, app.state.repository, app.state.evidence_storage, config)
+        maintenance = (
+            asyncio.create_task(maintenance_loop(app.state.repository, app.state.evidence_storage, config))
+            if config.maintenance_interval_seconds
+            else None
+        )
+        try:
+            yield
+        finally:
+            if maintenance:
+                maintenance.cancel()
+                with suppress(asyncio.CancelledError):
+                    await maintenance
 
     app = FastAPI(
         title="BioGate API",
@@ -252,23 +264,6 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
         return RedirectResponse("/", status_code=303)
 
     return app
-
-
-def cleanup_expired_attempt_snapshots(repository: Repository, settings: Settings) -> int:
-    """Delete legacy V2 attempt snapshots past their retention date.
-
-    Nothing writes new snapshots since the V2 verification API was removed, and the
-    manual cleanup button went with it, so expired ones are removed at startup.
-    """
-    deleted = 0
-    root = settings.attempt_image_dir.resolve()
-    for snapshot in repository.expired_snapshots(datetime.now(UTC).isoformat()):
-        path = (root / str(snapshot["file_name"])).resolve()
-        if path.parent == root:
-            path.unlink(missing_ok=True)
-        repository.delete_snapshot(int(snapshot["attempt_id"]))
-        deleted += 1
-    return deleted
 
 
 def _openapi_tag(path: str) -> str:
