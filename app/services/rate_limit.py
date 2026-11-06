@@ -12,8 +12,6 @@ from dataclasses import dataclass
 from app.db.database import Database
 
 PASSWORD_FAILURES = "PASSWORD_FAILURE"  # noqa: S105 -- bucket name, not a credential
-ADMIN_LOGIN_FAILURES = "ADMIN_LOGIN_FAILURE"
-ADMIN_LOGIN_LOCKS = "ADMIN_LOGIN_LOCK"
 RECOVERY_STARTS = "RECOVERY_START"
 FACE_CHALLENGE_STARTS = "FACE_CHALLENGE_START"
 

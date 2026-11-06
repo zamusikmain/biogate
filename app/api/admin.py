@@ -29,7 +29,6 @@ from app.schemas.api import (
     UserUpdateRequest,
 )
 from app.services.account_auth import AccountSession
-from app.services.auth import AdminSession
 from app.services.biometrics.embedding import aggregate, select_representatives, serialize_embedding
 from app.services.biometrics.errors import BiometricError
 from app.services.biometrics.pipeline import BiometricPipeline
@@ -103,7 +102,7 @@ def update_user(
 @router.delete("/users/{external_id}", response_model=DeleteResponse)
 def delete_user(
     external_id: str,
-    session: Annotated[AdminSession | AccountSession, Depends(require_admin_session)],
+    session: Annotated[AccountSession, Depends(require_admin_session)],
     repository: Annotated[Repository, Depends(get_repository)],
     evidence: Annotated[EvidenceStorage, Depends(get_evidence_storage)],
 ) -> DeleteResponse:
@@ -111,7 +110,7 @@ def delete_user(
     user = repository.get_user(external_id)
     if not user:
         raise HTTPException(404, detail={"reason_code": "USER_NOT_FOUND"})
-    admin_id = session.user_id if isinstance(session, AccountSession) else None
+    admin_id = session.user_id
     if admin_id == int(user["id"]):
         raise HTTPException(409, detail={"reason_code": "CANNOT_ERASE_OWN_ACCOUNT"})
     try:

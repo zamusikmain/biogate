@@ -42,11 +42,7 @@ class Settings(BaseSettings):
     admin_username: str = ""
     admin_password_hash: SecretStr = SecretStr("")
     session_secret: SecretStr = SecretStr("")
-    admin_session_ttl_seconds: int = Field(default=8 * 60 * 60, ge=300, le=7 * 24 * 60 * 60)
     admin_cookie_secure: bool = False
-    admin_login_max_attempts: int = Field(default=5, ge=2, le=20)
-    admin_login_window_seconds: int = Field(default=5 * 60, ge=30, le=60 * 60)
-    admin_login_cooldown_seconds: int = Field(default=60, ge=10, le=60 * 60)
     account_session_ttl_seconds: int = Field(default=8 * 60 * 60, ge=300, le=7 * 24 * 60 * 60)
     account_session_idle_seconds: int = Field(default=30 * 60, ge=60, le=24 * 60 * 60)
     password_min_length: int = Field(default=12, ge=12, le=12)

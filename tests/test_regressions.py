@@ -11,6 +11,7 @@ from app.services.biometrics.embedding import select_representatives, serialize_
 from app.services.challenges import ChallengeService, EphemeralCapture
 from app.services.identification import IdentificationService
 from app.services.repository import Repository
+from tests.conftest import record_verification
 from tests.test_v2 import analysis
 
 
@@ -173,12 +174,10 @@ def test_yaw_delta_semantics_are_physical_and_baseline_relative(tmp_path: Path) 
 
 def test_mirrored_preview_does_not_mirror_backend_frame() -> None:
     css = Path("app/static/styles.css").read_text(encoding="utf-8")
-    terminal = Path("app/static/app.js").read_text(encoding="utf-8")
     admin = Path("app/static/admin.js").read_text(encoding="utf-8")
     assert "transform:scaleX(-1)" in css
-    assert ".drawImage(video,0,0" in terminal
     assert ".drawImage(video, 0, 0" in admin
-    assert "scale(-1" not in terminal and "scale(-1" not in admin
+    assert "scale(-1" not in admin
 
 
 def test_ru_and_en_labels_share_physical_direction_mapping() -> None:
@@ -228,8 +227,8 @@ def test_head_pose_debug_reports_physical_left(tmp_path: Path) -> None:
     assert response["debug"]["yawDelta"] is not None and response["debug"]["yawDelta"] > 0
 
 
-def test_delete_biometric_preserves_user_history_and_audit(client: TestClient, enrolled: None, images: list) -> None:
-    client.post("/api/verify", data={"external_id": "alice"}, files=images)
+def test_delete_biometric_preserves_user_history_and_audit(client: TestClient, enrolled: None) -> None:
+    record_verification(client, "alice")
     repository = client.app.state.repository
     user_id = repository.get_user("alice")["id"]
     history_before = repository.user_verifications("alice")
@@ -253,15 +252,8 @@ def test_delete_biometric_preserves_user_history_and_audit(client: TestClient, e
     assert detail["model_name"] is None and detail["sample_count"] is None
 
 
-def test_verification_after_delete_reports_biometric_not_enrolled(client: TestClient, enrolled: None) -> None:
-    client.delete("/api/admin/users/alice/biometric")
-    response = client.post("/api/verification-sessions", json={"external_id": "alice"})
-    assert response.status_code == 404
-    assert response.json()["detail"]["reason_code"] == "BIOMETRIC_NOT_ENROLLED"
-
-
-def test_reenrollment_after_delete_keeps_old_history(client: TestClient, enrolled: None, images: list) -> None:
-    client.post("/api/verify", data={"external_id": "alice"}, files=images)
+def test_reenrollment_after_delete_keeps_old_history(client: TestClient, enrolled: None) -> None:
+    record_verification(client, "alice")
     old_attempt = client.get("/api/admin/users/alice/verifications").json()[0]["id"]
     client.delete("/api/admin/users/alice/biometric")
     photos = [("photos", (f"new-{index}.jpg", b"face", "image/jpeg")) for index in range(3)]

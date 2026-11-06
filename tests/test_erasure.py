@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.services.biometrics.embedding import serialize_embedding
+from tests.conftest import TEST_ADMIN_NAME
 from tests.test_v3 import v3_admin_login
 
 PERSON_LOGIN = "erase-me"
@@ -149,7 +150,7 @@ def test_erasure_removes_person_templates_samples_files_and_identifying_event_da
     assert login.status_code == 401
 
 
-def test_legacy_v2_delete_performs_the_same_complete_erasure(client: TestClient) -> None:
+def test_legacy_admin_delete_performs_the_same_complete_erasure(client: TestClient) -> None:
     seeded = _seed_person(client)
     settings: Settings = client.app.state.settings
     storage = client.app.state.evidence_storage
@@ -173,7 +174,7 @@ def test_legacy_v2_delete_performs_the_same_complete_erasure(client: TestClient)
     erased = _rows(db, "SELECT metadata FROM audit_events WHERE event_type='ACCOUNT_ERASED'")
     metadata = json.loads(erased[0]["metadata"])
     assert metadata["reason"] == "LEGACY_ADMIN_DELETE"
-    assert metadata["admin_id"] is None
+    assert metadata["admin_id"] == client.app.state.repository.get_user_by_login(TEST_ADMIN_NAME)["id"]
     assert client.delete(f"/api/admin/users/{PERSON_LOGIN}").status_code == 404
 
 

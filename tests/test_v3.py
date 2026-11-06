@@ -298,6 +298,7 @@ def test_create_account_validation_uniqueness_atomicity_and_audit(client: TestCl
         "comment": " Created in regression test ",
         "temporary_password": "Temporary-pass-123",
     }
+    client.cookies.delete("biogate_session")
     assert client.post("/api/v3/admin/accounts", json=payload).status_code == 401
     login = v3_admin_login(client)
     csrf = login.json()["csrf_token"]
@@ -533,7 +534,8 @@ def test_admin_pagination_and_safe_event_details_rbac(client: TestClient) -> Non
 
 
 def test_security_headers_and_sensitive_cache_policy(client: TestClient) -> None:
-    for path in ("/", "/admin/login", "/health"):
+    client.cookies.delete("biogate_session")
+    for path in ("/", "/health"):
         response = client.get(path)
         assert response.headers["x-content-type-options"] == "nosniff"
         assert response.headers["x-frame-options"] == "DENY"

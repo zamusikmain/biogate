@@ -15,8 +15,6 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import RequestResponseEndpoint
 
 from app.api.admin import router as admin_router
-from app.api.auth import router as auth_router
-from app.api.realtime import router as realtime_router
 from app.api.routes import router
 from app.api.v3 import V3_RUNTIME_SETTINGS
 from app.api.v3 import router as v3_router
@@ -24,7 +22,6 @@ from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.db.database import Database
 from app.services.account_auth import ACCOUNT_COOKIE_NAME, AccountAuthService
-from app.services.auth import ADMIN_COOKIE_NAME, AdminAuthService
 from app.services.biometric_workflow import BiometricWorkflowService
 from app.services.biometrics.pipeline import BiometricPipeline
 from app.services.challenges import ChallengeService
@@ -62,7 +59,6 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
         admin_hash = config.admin_password_hash.get_secret_value()
         if config.admin_username and admin_hash:
             app.state.repository.ensure_bootstrap_admin(config.admin_username, admin_hash)
-        app.state.auth_service = AdminAuthService(config, app.state.repository)
         app.state.account_auth_service = AccountAuthService(app.state.repository, config)
         app.state.identification_service = IdentificationService(app.state.repository, config)
         app.state.evidence_storage = EvidenceStorage(app.state.repository, config)
@@ -96,8 +92,6 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
         ],
     )
     app.include_router(router)
-    app.include_router(realtime_router)
-    app.include_router(auth_router)
     app.include_router(admin_router)
     app.include_router(v3_router)
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
@@ -229,15 +223,10 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
             return RedirectResponse("/admin", status_code=303)
         return templates.TemplateResponse(request=request, name="user.html")
 
-    @app.get("/admin/login", response_class=HTMLResponse, include_in_schema=False)
-    async def admin_login(request: Request) -> Response:
-        account_session = request.app.state.account_auth_service.get_session(request.cookies.get(ACCOUNT_COOKIE_NAME))
-        if account_session:
-            return RedirectResponse("/admin" if account_session.role == "ADMIN" else "/user", status_code=303)
-        auth = request.app.state.auth_service
-        if auth.get_session(request.cookies.get(ADMIN_COOKIE_NAME)):
-            return templates.TemplateResponse(request=request, name="admin_login.html")
-        return templates.TemplateResponse(request=request, name="admin_login.html")
+    @app.get("/admin/login", include_in_schema=False)
+    async def admin_login() -> Response:
+        # The separate environment-hash admin login was removed; admins sign in on "/".
+        return RedirectResponse("/", status_code=308)
 
     @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
     @app.get("/admin/users/{external_id}", response_class=HTMLResponse, include_in_schema=False)

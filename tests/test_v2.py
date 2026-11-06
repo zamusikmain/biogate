@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
@@ -12,6 +13,7 @@ from app.services.biometrics.embedding import serialize_embedding
 from app.services.biometrics.models import FaceObservation, FrameAnalysis, QualityResult
 from app.services.challenges import BlinkStateMachine, BlinkTemporalState, ChallengeService, EphemeralCapture
 from app.services.repository import Repository
+from tests.conftest import record_verification
 
 
 def analysis(yaw: float = 0.0, ear: float = 0.25) -> FrameAnalysis:
@@ -103,29 +105,6 @@ def test_pose_direction_noise_natural_turn_and_fixed_baseline(tmp_path: Path) ->
     assert service._evaluate_pose(capture, "TURN_RIGHT", baseline + 0.18).matches is False
     assert service._evaluate_pose(capture, "TURN_RIGHT", baseline - 0.18).matches is True
     assert capture.baseline_yaw == baseline
-
-
-def test_challenge_creation_is_server_owned(client: TestClient, enrolled: None) -> None:
-    response = client.post("/api/verification-sessions", json={"external_id": "alice"})
-    assert response.status_code == 201
-    body = response.json()
-    assert body["sequence"][0] == "CENTER"
-    assert set(body["sequence"]) == {"CENTER", "TURN_LEFT", "TURN_RIGHT", "BLINK"}
-    stored = client.app.state.repository.get_session(body["challenge_id"])
-    assert json.loads(stored["expected_sequence"]) == body["sequence"]
-
-
-def test_challenge_expiry(client: TestClient, enrolled: None) -> None:
-    session_id = client.post("/api/verification-sessions", json={"external_id": "alice"}).json()["challenge_id"]
-    with client.app.state.repository.db.write() as connection:
-        connection.execute(
-            "UPDATE verification_sessions SET expires_at=? WHERE id=?",
-            ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(), session_id),
-        )
-    files = {"frame": ("frame.jpg", b"face", "image/jpeg")}
-    response = client.post(f"/api/verification-sessions/{session_id}/frames", files=files)
-    assert response.status_code == 410
-    assert response.json()["detail"]["reason_code"] == "CHALLENGE_TIMEOUT"
 
 
 def test_auto_capture_requires_stability(tmp_path: Path) -> None:
@@ -224,7 +203,7 @@ def test_invalid_challenge_sequence_is_rejected(tmp_path: Path) -> None:
     assert repository.verifications()[0]["reason_code"] == "INVALID_CHALLENGE_SEQUENCE"
 
 
-def test_admin_user_creation_and_blocked_verification(client: TestClient, images: list) -> None:
+def test_admin_user_creation_and_blocked_verification(client: TestClient) -> None:
     created = client.post(
         "/api/admin/users",
         json={"external_id": "blocked", "display_name": "Blocked", "status": "BLOCKED", "comment": "test"},
@@ -233,8 +212,9 @@ def test_admin_user_creation_and_blocked_verification(client: TestClient, images
     client.app.state.repository.upsert_template(
         "blocked", "test", "1", serialize_embedding(np.asarray([1.0, 0.0, 0.0], dtype=np.float32)), 3, 3
     )
-    response = client.post("/api/verification-sessions", json={"external_id": "blocked"})
-    assert response.status_code == 403
+    service = ChallengeService(client.app.state.repository, client.app.state.settings)
+    with pytest.raises(PermissionError):
+        service.create("blocked")
     assert client.get("/api/admin/users/blocked").json()["status"] == "BLOCKED"
 
 
@@ -265,8 +245,8 @@ def test_insufficient_valid_photo_enrollment(client: TestClient) -> None:
     assert body["status"] == "INSUFFICIENT_VALID_IMAGES"
 
 
-def test_histories_attempt_details_and_audit(client: TestClient, enrolled: None, images: list) -> None:
-    client.post("/api/verify", data={"external_id": "alice"}, files=images)
+def test_histories_attempt_details_and_audit(client: TestClient, enrolled: None) -> None:
+    record_verification(client, "alice")
     user_rows = client.get("/api/admin/users/alice/verifications").json()
     global_rows = client.get("/api/admin/verifications").json()
     assert len(user_rows) == len(global_rows) == 1
