@@ -16,6 +16,7 @@ from app.services.biometrics.embedding import aggregate
 from app.services.biometrics.models import FrameAnalysis
 from app.services.challenges import BlinkStateMachine, ChallengeService, EphemeralCapture
 from app.services.identification import IdentificationService
+from app.services.rate_limit import FACE_CHALLENGE_STARTS, RECOVERY_STARTS, RateLimitStore
 from app.services.repository import Repository
 
 
@@ -49,8 +50,9 @@ class FaceLoginService:
         self.identification = identification
         self.blink = BlinkStateMachine()
         self._states: dict[str, FaceLoginState] = {}
-        self._recovery_starts: dict[str, list[datetime]] = {}
-        self._client_starts: dict[str, list[datetime]] = {}
+        # Attempt counters survive restarts and are shared by workers; only live
+        # challenge state (embeddings, step) stays in this process.
+        self.rate_limits = RateLimitStore(repository.db)
         self._lock = threading.RLock()
 
     def create(self, mode: str = "IDENTIFY", login: str | None = None, client_address: str = "") -> dict[str, Any]:
@@ -65,9 +67,16 @@ class FaceLoginService:
         now = datetime.now(UTC)
         with self._lock:
             self._prune_expired(now)
-            self._record_client_start(client_key, now)
             if len(self._states) >= self.settings.face_login_max_active_challenges:
                 raise PermissionError("FACE_LOGIN_BUSY")
+        if not self.rate_limits.record_if_under(
+            FACE_CHALLENGE_STARTS,
+            client_key,
+            self.settings.face_login_max_attempts,
+            self.settings.face_login_window_seconds,
+            now.timestamp(),
+        ):
+            raise PermissionError("FACE_LOGIN_RATE_LIMITED")
         target_user_id = None
         if mode == "RECOVERY" and login:
             self._record_recovery_start(login, client_address)
@@ -287,34 +296,15 @@ class FaceLoginService:
     def _prune_expired(self, now: datetime) -> None:
         for state_id in [key for key, state in self._states.items() if state.expires_at <= now]:
             del self._states[state_id]
-        cutoff = now - timedelta(seconds=self.settings.face_login_window_seconds)
-        for key in [key for key, starts in self._client_starts.items() if not starts or starts[-1] < cutoff]:
-            del self._client_starts[key]
-        recovery_cutoff = now - timedelta(seconds=self.settings.recovery_window_seconds)
-        for key in [key for key, starts in self._recovery_starts.items() if not starts or starts[-1] < recovery_cutoff]:
-            del self._recovery_starts[key]
-
-    def _record_client_start(self, client_key: str, now: datetime) -> None:
-        cutoff = now - timedelta(seconds=self.settings.face_login_window_seconds)
-        starts = [item for item in self._client_starts.get(client_key, []) if item >= cutoff]
-        if len(starts) >= self.settings.face_login_max_attempts:
-            self._client_starts[client_key] = starts
-            raise PermissionError("FACE_LOGIN_RATE_LIMITED")
-        starts.append(now)
-        self._client_starts[client_key] = starts
 
     def _record_recovery_start(self, login: str, client_address: str) -> None:
         secret = self.settings.session_secret.get_secret_value()
         material = f"{client_address}|{login.casefold()}"
         key = hmac.new(secret.encode(), material.encode(), hashlib.sha256).hexdigest()
-        now = datetime.now(UTC)
-        cutoff = now - timedelta(seconds=self.settings.recovery_window_seconds)
-        with self._lock:
-            starts = [item for item in self._recovery_starts.get(key, []) if item >= cutoff]
-            if len(starts) >= self.settings.recovery_max_attempts:
-                raise PermissionError("RECOVERY_RATE_LIMITED")
-            starts.append(now)
-            self._recovery_starts[key] = starts
+        if not self.rate_limits.record_if_under(
+            RECOVERY_STARTS, key, self.settings.recovery_max_attempts, self.settings.recovery_window_seconds
+        ):
+            raise PermissionError("RECOVERY_RATE_LIMITED")
 
     @staticmethod
     def _candidate(candidate: Any) -> dict[str, Any] | None:

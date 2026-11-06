@@ -1,7 +1,6 @@
 import hashlib
 import hmac
 import secrets
-import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -9,6 +8,7 @@ from argon2 import PasswordHasher, Type
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
 from app.core.config import Settings
+from app.services.rate_limit import PASSWORD_FAILURES, RateLimitStore
 from app.services.repository import Repository
 
 ACCOUNT_COOKIE_NAME = "biogate_session"
@@ -38,8 +38,7 @@ class AccountAuthService:
         self.repository = repository
         self.settings = settings
         self.hasher = PasswordHasher(type=Type.ID)
-        self._password_failures: dict[str, list[datetime]] = {}
-        self._rate_lock = threading.RLock()
+        self.rate_limits = RateLimitStore(repository.db)
 
     @staticmethod
     def validate_password(password: str) -> None:
@@ -132,8 +131,7 @@ class AccountAuthService:
         if user["status"] == "DISABLED":
             self._denied_status(user, "DISABLED", client_address, user_agent)
         session, cookie = self.create_session(user, "PASSWORD", client_address, user_agent)
-        with self._rate_lock:
-            self._password_failures.pop(rate_key, None)
+        self.rate_limits.clear(PASSWORD_FAILURES, rate_key)
         self.repository.record_login_success(int(str(user["id"])), "PASSWORD")
         event_id = self.repository.add_access_event(
             {
@@ -356,26 +354,19 @@ class AccountAuthService:
         return hmac.new(secret.encode(), f"login|{login.casefold()}".encode(), hashlib.sha256).hexdigest() + ":"
 
     def clear_password_failures(self, login: str) -> None:
-        """Forget in-memory failed attempts for a login on every client address.
+        """Forget failed attempts for a login on every client address.
 
         A new password makes earlier failures irrelevant; without this the user stays
         throttled after an admin reset and cannot sign in with the new password.
         """
-        prefix = self._login_rate_prefix(login)
-        with self._rate_lock:
-            for key in [key for key in self._password_failures if key.startswith(prefix)]:
-                del self._password_failures[key]
+        self.rate_limits.clear_prefix(PASSWORD_FAILURES, self._login_rate_prefix(login))
 
     def _password_rate_limited(self, key: str) -> bool:
-        now = datetime.now(UTC)
-        cutoff = now - timedelta(seconds=self.settings.password_login_window_seconds)
-        with self._rate_lock:
-            recent = [attempt for attempt in self._password_failures.get(key, []) if attempt >= cutoff]
-            self._password_failures[key] = recent
-            if len(recent) < self.settings.password_login_max_attempts:
-                return False
-            return (now - recent[-1]).total_seconds() < self.settings.password_login_cooldown_seconds
+        now = datetime.now(UTC).timestamp()
+        recent = self.rate_limits.stats(PASSWORD_FAILURES, key, self.settings.password_login_window_seconds, now)
+        if recent.count < self.settings.password_login_max_attempts or recent.last is None:
+            return False
+        return (now - recent.last) < self.settings.password_login_cooldown_seconds
 
     def _record_password_failure(self, key: str, now: datetime) -> None:
-        with self._rate_lock:
-            self._password_failures.setdefault(key, []).append(now)
+        self.rate_limits.record(PASSWORD_FAILURES, key, now.timestamp())

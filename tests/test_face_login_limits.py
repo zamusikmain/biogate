@@ -35,9 +35,9 @@ def test_rate_limit_window_expires(client: TestClient) -> None:
         service.create("IDENTIFY", client_address="10.0.0.1")
     with pytest.raises(PermissionError, match="FACE_LOGIN_RATE_LIMITED"):
         service.create("IDENTIFY", client_address="10.0.0.1")
-    window = timedelta(seconds=client.app.state.settings.face_login_window_seconds + 1)
-    for starts in service._client_starts.values():
-        starts[:] = [moment - window for moment in starts]
+    window = client.app.state.settings.face_login_window_seconds + 1
+    with client.app.state.repository.db.write() as connection:
+        connection.execute("UPDATE rate_limit_events SET occurred_at=occurred_at-?", (window,))
     service.create("IDENTIFY", client_address="10.0.0.1")
 
 
