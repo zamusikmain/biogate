@@ -69,6 +69,10 @@ def test_admin_create_form_has_one_required_login_and_optional_integration_id() 
     login_input = re.search(r'<input name="login"[^>]*>', form)
     external_input = re.search(r'<input name="external_id"[^>]*>', form)
     assert login_input and " required" in login_input.group(0)
+    # Browsers compile pattern with the "v" flag, where an unescaped trailing "-" in a
+    # class is a syntax error and silently disables validation.
+    assert 'pattern="[A-Za-z0-9_.@\\-]+"' in login_input.group(0)
+    assert external_input and 'pattern="[A-Za-z0-9_.\\-]+"' in external_input.group(0)
     assert external_input and " required" not in external_input.group(0)
     integration = form[form.index('<details class="wide integration-fields">') : form.index("</details>")]
     assert 'name="external_id"' in integration
