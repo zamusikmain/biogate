@@ -135,7 +135,8 @@ def _create_account(client: TestClient, external_id: str, *, status: str = "ACTI
 def _enroll(client: TestClient, external_id: str, identity: str) -> None:
     _admin_login(client)
     files = [("photos", (f"fixture-{index}.jpg", identity.encode(), "image/jpeg")) for index in range(3)]
-    response = client.post(f"/api/admin/users/{external_id}/enrollment/photos", files=files)
+    user_id = int(client.app.state.repository.get_user(external_id)["id"])
+    response = client.post(f"/api/v3/admin/accounts/{user_id}/enrollment/photos", files=files)
     assert response.status_code == 200
     assert response.json()["template_created"] is True
     assert "embedding" not in str(response.json()).casefold()
@@ -352,7 +353,9 @@ def test_biometric_update_cancel_duplicate_and_atomic_approval(
 
     duplicate = _create_account(client, "duplicate-target")
     duplicate_files = [("photos", (f"duplicate-{index}.jpg", b"b", "image/jpeg")) for index in range(3)]
-    duplicate_enrollment = client.post("/api/admin/users/duplicate-target/enrollment/photos", files=duplicate_files)
+    duplicate_enrollment = client.post(
+        f"/api/v3/admin/accounts/{duplicate['id']}/enrollment/photos", files=duplicate_files
+    )
     assert duplicate_enrollment.status_code == 409
     assert duplicate_enrollment.json()["detail"]["reason_code"] == "DUPLICATE_BIOMETRIC"
     assert client.app.state.repository.get_template(int(duplicate["id"])) is None

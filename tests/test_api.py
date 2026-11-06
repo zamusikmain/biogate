@@ -2,6 +2,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from tests.conftest import create_account, enroll_photos, face_photos
+
 
 def test_health(client: TestClient) -> None:
     assert client.get("/health").json()["status"] == "ok"
@@ -17,19 +19,18 @@ def test_request_id_and_health_endpoints(client: TestClient) -> None:
 
 
 def test_admin_enrollment_does_not_return_embeddings(client: TestClient) -> None:
-    client.post("/api/admin/users", json={"external_id": "alice", "display_name": "Alice"})
-    photos = [("photos", (f"photo-{index}.jpg", b"face", "image/jpeg")) for index in range(3)]
-    response = client.post("/api/admin/users/alice/enrollment/photos", files=photos)
+    user_id = create_account(client, "alice", "Alice")
+    response = enroll_photos(client, user_id, face_photos())
     assert response.json()["template_created"] is True
     assert "embedding" not in response.text
-    detail = client.get("/api/admin/users/alice").text
-    assert "embedding" not in detail
+    assert "embedding" not in client.get(f"/api/v3/admin/accounts/{user_id}/biometric").text
 
 
-def test_biometric_deletion(client: TestClient, enrolled: None) -> None:
-    assert client.delete("/api/admin/users/alice/biometric").json() == {"deleted": True}
-    assert client.get("/api/admin/users/alice").json()["biometric_template_id"] is None
+def test_biometric_deletion(client: TestClient, enrolled: int) -> None:
+    removed = client.request("DELETE", f"/api/v3/admin/accounts/{enrolled}/biometric", json={"reason": "test"})
+    assert removed.json() == {"removed": True}
+    assert client.get(f"/api/v3/admin/accounts/{enrolled}/biometric").json()["template"] is None
 
 
-def test_privacy_no_images_written(client: TestClient, enrolled: None, tmp_path: Path) -> None:
+def test_privacy_no_images_written(client: TestClient, enrolled: int, tmp_path: Path) -> None:
     assert list(tmp_path.rglob("*.jpg")) == []

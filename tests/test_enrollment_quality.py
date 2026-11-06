@@ -9,6 +9,7 @@ from app.services.biometrics.errors import BiometricError
 from app.services.biometrics.models import FaceObservation, QualityResult
 from app.services.biometrics.pipeline import BiometricPipeline
 from app.services.biometrics.quality import EnrollmentPoseGate, head_roll_degrees
+from tests.conftest import create_account, enroll_photos
 from tests.test_v3 import v3_admin_login
 
 
@@ -86,9 +87,9 @@ def test_api_reports_pose_reason_for_user_capture_and_admin_photo_enrollment(cli
     assert rejected.status_code == 422
     assert rejected.json()["detail"]["reason_code"] == "HEAD_TURNED"
 
-    client.post("/api/admin/users", json={"external_id": "pose", "display_name": "Pose"})
+    user_id = create_account(client, "pose")
     photos = [("photos", (f"{index}.jpg", b"turned" if index == 0 else b"face", "image/jpeg")) for index in range(4)]
-    result = client.post("/api/admin/users/pose/enrollment/photos", files=photos).json()
+    result = enroll_photos(client, user_id, photos).json()
     assert result["results"][0]["reason_code"] == "HEAD_TURNED"
     assert result["template_created"] is True and result["accepted_frames"] == 3
 

@@ -87,31 +87,5 @@ def require_account_admin(
     return session
 
 
-def require_admin_session(
-    request: Request,
-    account_auth: Annotated[AccountAuthService, Depends(get_account_auth_service)],
-) -> AccountSession:
-    """ADMIN account session for the /api/admin/* endpoints the console still uses."""
-    session = account_auth.get_session(request.cookies.get(ACCOUNT_COOKIE_NAME))
-    if not session:
-        raise HTTPException(401, detail={"reason_code": "ADMIN_AUTH_REQUIRED"})
-    if session.role != "ADMIN":
-        raise HTTPException(403, detail={"reason_code": "ADMIN_REQUIRED"})
-    if session.must_change_password:
-        raise HTTPException(403, detail={"reason_code": "PASSWORD_CHANGE_REQUIRED"})
-    return session
-
-
-def require_admin_csrf(
-    request: Request,
-    session: Annotated[AccountSession, Depends(require_admin_session)],
-) -> None:
-    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
-        return
-    token = request.headers.get("X-CSRF-Token")
-    if not (token and secrets.compare_digest(token, session.csrf_token)):
-        raise HTTPException(403, detail={"reason_code": "CSRF_VALIDATION_FAILED"})
-
-
 RepositoryDep = Annotated[Repository, get_repository]
 PipelineDep = Annotated[BiometricPipeline, get_pipeline]

@@ -183,6 +183,8 @@ def test_openapi_is_v3_focused_and_safe(client: TestClient) -> None:
     assert "/api/v3/admin/backups" in paths
     assert "/health" in paths
     assert "/api/admin/users" not in paths
+    assert "/api/v3/admin/audit-events" in paths
+    assert "/api/v3/admin/accounts/{user_id}/enrollment/photos" in paths
     assert "/api/verification-sessions" not in paths
     tags = {tag for path in paths.values() for operation in path.values() for tag in operation.get("tags", [])}
     assert {

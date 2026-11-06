@@ -11,7 +11,7 @@ from app.services.biometrics.embedding import select_representatives, serialize_
 from app.services.challenges import ChallengeService, EphemeralCapture
 from app.services.identification import IdentificationService
 from app.services.repository import Repository
-from tests.conftest import record_verification
+from tests.conftest import create_account, enroll_photos, face_photos, record_verification
 from tests.test_v2 import analysis
 
 
@@ -227,60 +227,56 @@ def test_head_pose_debug_reports_physical_left(tmp_path: Path) -> None:
     assert response["debug"]["yawDelta"] is not None and response["debug"]["yawDelta"] > 0
 
 
-def test_delete_biometric_preserves_user_history_and_audit(client: TestClient, enrolled: None) -> None:
+def _remove_biometric(client: TestClient, user_id: int):  # type: ignore[no-untyped-def]
+    return client.request("DELETE", f"/api/v3/admin/accounts/{user_id}/biometric", json={"reason": "test"})
+
+
+def test_delete_biometric_preserves_user_history_and_audit(client: TestClient, enrolled: int) -> None:
     record_verification(client, "alice")
     repository = client.app.state.repository
-    user_id = repository.get_user("alice")["id"]
     history_before = repository.user_verifications("alice")
     audit_before = {event["id"] for event in repository.audit_events()}
     attempt_id = history_before[0]["id"]
     repository.add_snapshot(attempt_id, "historic.jpg", "2026-01-01T00:00:00+00:00", "2099-01-01T00:00:00+00:00")
-    response = client.delete("/api/admin/users/alice/biometric")
-    assert response.status_code == 200 and response.json() == {"deleted": True}
+    response = _remove_biometric(client, enrolled)
+    assert response.status_code == 200 and response.json() == {"removed": True}
     assert repository.get_user("alice") is not None
     assert repository.get_user("alice")["enrolled_at"] is None
-    assert repository.get_template(user_id) is None
+    assert repository.get_template(enrolled) is None
     assert repository.user_verifications("alice") == history_before
     assert repository.get_snapshot(attempt_id) is not None
     assert audit_before.issubset({event["id"] for event in repository.audit_events()})
     assert any(event["event_type"] == "BIOMETRIC_DELETED" for event in repository.audit_events())
-    repeated = client.delete("/api/admin/users/alice/biometric")
-    assert repeated.status_code == 409
-    assert repeated.json()["detail"]["reason_code"] == "BIOMETRIC_NOT_ENROLLED"
-    detail = client.get("/api/admin/users/alice").json()
-    assert detail["biometric_template_id"] is None
-    assert detail["model_name"] is None and detail["sample_count"] is None
+    assert _remove_biometric(client, enrolled).json() == {"removed": False}
+    assert client.get(f"/api/v3/admin/accounts/{enrolled}/biometric").json()["template"] is None
 
 
-def test_reenrollment_after_delete_keeps_old_history(client: TestClient, enrolled: None) -> None:
-    record_verification(client, "alice")
-    old_attempt = client.get("/api/admin/users/alice/verifications").json()[0]["id"]
-    client.delete("/api/admin/users/alice/biometric")
-    photos = [("photos", (f"new-{index}.jpg", b"face", "image/jpeg")) for index in range(3)]
-    response = client.post("/api/admin/users/alice/enrollment/photos", files=photos)
+def test_reenrollment_after_delete_keeps_old_history(client: TestClient, enrolled: int) -> None:
+    old_attempt = record_verification(client, "alice")
+    _remove_biometric(client, enrolled)
+    response = enroll_photos(client, enrolled, face_photos())
     assert response.json()["template_created"] is True
-    detail = client.get("/api/admin/users/alice").json()
-    assert detail["biometric_template_id"] is not None and detail["sample_count"] == 3
-    assert client.get("/api/admin/users/alice/verifications").json()[0]["id"] == old_attempt
+    template = client.get(f"/api/v3/admin/accounts/{enrolled}/biometric").json()["template"]
+    assert template is not None and template["sample_count"] == 3
+    assert client.app.state.repository.user_verifications("alice")[0]["id"] == old_attempt
 
 
-def test_updating_existing_template_keeps_user_and_writes_audit(client: TestClient, enrolled: None) -> None:
+def test_updating_existing_template_keeps_user_and_writes_audit(client: TestClient, enrolled: int) -> None:
     before = client.app.state.repository.get_user("alice")
-    photos = [("photos", (f"update-{index}.jpg", b"face", "image/jpeg")) for index in range(3)]
-    assert client.post("/api/admin/users/alice/enrollment/photos", files=photos).json()["template_created"] is True
+    assert enroll_photos(client, enrolled, face_photos()).json()["template_created"] is True
     after = client.app.state.repository.get_user("alice")
     assert before["id"] == after["id"]
     assert client.app.state.repository.audit_events()[0]["event_type"] == "BIOMETRIC_REPLACED_BY_ADMIN"
 
 
 def test_photo_enrollment_returns_each_invalid_result(client: TestClient) -> None:
-    client.post("/api/admin/users", json={"external_id": "validation", "display_name": "Validation"})
+    user_id = create_account(client, "validation")
     photos = [
         ("photos", ("bad.txt", b"text", "text/plain")),
         ("photos", ("invalid.jpg", b"invalid", "image/jpeg")),
         ("photos", ("multiple.jpg", b"multiple", "image/jpeg")),
     ]
-    response = client.post("/api/admin/users/validation/enrollment/photos", files=photos)
+    response = enroll_photos(client, user_id, photos)
     assert response.status_code == 200
     body = response.json()
     assert body["template_created"] is False
@@ -292,20 +288,30 @@ def test_photo_enrollment_returns_each_invalid_result(client: TestClient) -> Non
 
 
 def test_webcam_candidate_validation_does_not_enroll(client: TestClient) -> None:
-    client.post("/api/admin/users", json={"external_id": "camera", "display_name": "Camera"})
+    user_id = create_account(client, "camera")
     response = client.post(
-        "/api/admin/users/camera/enrollment/validate",
+        f"/api/v3/admin/accounts/{user_id}/enrollment/validate",
         files={"photo": ("candidate.jpg", b"face", "image/jpeg")},
     )
     assert response.status_code == 200 and response.json()["accepted"] is True
-    assert client.get("/api/admin/users/camera").json()["biometric_template_id"] is None
+    assert client.get(f"/api/v3/admin/accounts/{user_id}/biometric").json()["template"] is None
 
 
-def test_admin_empty_state_and_localized_delete_flow_are_present() -> None:
+def test_enrollment_endpoints_need_an_existing_account(client: TestClient) -> None:
+    assert enroll_photos(client, 999_999, face_photos()).status_code == 404
+    validate = client.post(
+        "/api/v3/admin/accounts/999999/enrollment/validate", files={"photo": ("c.jpg", b"face", "image/jpeg")}
+    )
+    assert validate.status_code == 404
+
+
+def test_admin_biometric_actions_use_v3_account_endpoints() -> None:
     source = Path("app/static/admin.js").read_text(encoding="utf-8")
     locales = Path("app/static/locales.js").read_text(encoding="utf-8")
-    assert "biometric-empty" in source
-    assert "/api/admin/users/${encodeURIComponent(selectedUser)}/biometric" in source
+    assert "/api/v3/admin/accounts/${selectedUser}/enrollment/photos" in source
+    assert "/api/v3/admin/accounts/${selectedUser}/enrollment/validate" in source
+    assert "/api/v3/admin/accounts/${user.id}/biometric" in source
+    assert "/api/admin/" not in source
     assert "Биометрия удалена" in locales
     assert "Biometric enrollment deleted" in locales
 
@@ -369,7 +375,7 @@ def test_admin_enrollment_method_selector_is_accessible_and_theme_safe() -> None
         "admin-extra.css": 12,
         "v3.css": 8,
         "locales.js": 13,
-        "admin.js": 14,
+        "admin.js": 15,
     }
     for asset, version in asset_versions.items():
         assert f"/static/{asset}?v={version}" in template

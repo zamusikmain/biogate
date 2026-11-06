@@ -513,7 +513,7 @@ def test_admin_pagination_and_safe_event_details_rbac(client: TestClient) -> Non
         "SUCCESS",
         {"reason": "visible", "session_id": "hidden", "password_hash": "hidden"},
     )
-    audit_list = client.get("/api/admin/audit", params={"limit": 20})
+    audit_list = client.get("/api/v3/admin/audit-events", params={"limit": 20})
     assert audit_list.status_code == 200
     audit_event = next(row for row in audit_list.json() if row["event_type"] == "SAFE_AUDIT_LIST_TEST")
     assert audit_event["metadata"] == {"reason": "visible"}
@@ -854,7 +854,7 @@ def test_admin_password_reset_reason_is_validated_persisted_and_safely_exposed(c
     assert "reset-pass-456" not in json.dumps(reset_event["metadata"]).lower()
     assert "session" not in json.dumps(reset_event["metadata"]).lower()
 
-    audit_rows = client.get("/api/admin/audit", params={"limit": 100}).json()
+    audit_rows = client.get("/api/v3/admin/audit-events", params={"limit": 100}).json()
     audit_event = next(row for row in audit_rows if row["event_type"] == "PASSWORD_RESET_BY_ADMIN")
     details = client.get(f"/api/v3/admin/events/audit/{audit_event['id']}")
     assert details.status_code == 200

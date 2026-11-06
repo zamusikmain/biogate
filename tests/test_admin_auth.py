@@ -1,6 +1,7 @@
-"""The console's /api/admin/* endpoints accept only an ADMIN account session.
+"""The admin console API (/api/v3/admin) accepts only an ADMIN account session.
 
-The separate V2 administrator login and the public V2 verification API were removed.
+The separate V2 administrator login, the public V2 verification API and the legacy
+/api/admin/* endpoints were removed.
 """
 
 from collections.abc import Iterator
@@ -63,6 +64,17 @@ def test_legacy_admin_login_page_redirects_to_unified_entry(tmp_path: Path) -> N
         ("POST", "/api/verification-sessions"),
         ("POST", "/api/verification-sessions/some-id/frames"),
         ("DELETE", "/api/verification-sessions/some-id"),
+        ("GET", "/api/admin/dashboard"),
+        ("GET", "/api/admin/users"),
+        ("POST", "/api/admin/users"),
+        ("GET", "/api/admin/users/alice"),
+        ("DELETE", "/api/admin/users/alice"),
+        ("POST", "/api/admin/users/alice/enrollment/photos"),
+        ("POST", "/api/admin/users/alice/enrollment/validate"),
+        ("GET", "/api/admin/verifications"),
+        ("GET", "/api/admin/audit"),
+        ("GET", "/api/admin/settings"),
+        ("POST", "/api/admin/snapshots/cleanup"),
     ],
 )
 def test_removed_v2_endpoints_are_gone(tmp_path: Path, method: str, path: str) -> None:
@@ -72,11 +84,11 @@ def test_removed_v2_endpoints_are_gone(tmp_path: Path, method: str, path: str) -
 
 def test_admin_api_requires_an_account_session(tmp_path: Path) -> None:
     with unauthenticated_client(tmp_path) as client:
-        unauthorized = client.get("/api/admin/dashboard")
+        unauthorized = client.get("/api/v3/admin/dashboard")
         assert unauthorized.status_code == 401
-        assert unauthorized.json()["detail"]["reason_code"] == "ADMIN_AUTH_REQUIRED"
+        assert unauthorized.json()["detail"]["reason_code"] == "AUTH_REQUIRED"
         sign_in(client)
-        assert client.get("/api/admin/dashboard").status_code == 200
+        assert client.get("/api/v3/admin/dashboard").status_code == 200
 
 
 def test_admin_api_rejects_user_accounts(tmp_path: Path) -> None:
@@ -97,7 +109,7 @@ def test_admin_api_rejects_user_accounts(tmp_path: Path) -> None:
         assert created.status_code == 201
         client.cookies.clear()
         sign_in(client, "plain-user", "Plain-user-pass-1!")
-        forbidden = client.get("/api/admin/dashboard")
+        forbidden = client.get("/api/v3/admin/dashboard")
         assert forbidden.status_code == 403
         assert forbidden.json()["detail"]["reason_code"] == "ADMIN_REQUIRED"
 
@@ -105,10 +117,15 @@ def test_admin_api_rejects_user_accounts(tmp_path: Path) -> None:
 def test_admin_api_requires_csrf_for_writes(tmp_path: Path) -> None:
     with unauthenticated_client(tmp_path) as client:
         csrf = sign_in(client)
-        payload = {"external_id": "csrf-user", "display_name": "CSRF User"}
-        missing = client.post("/api/admin/users", json=payload)
-        invalid = client.post("/api/admin/users", json=payload, headers={"X-CSRF-Token": "invalid"})
-        valid = client.post("/api/admin/users", json=payload, headers={"X-CSRF-Token": csrf})
+        payload = {
+            "external_id": "csrf-user",
+            "login": "csrf-user",
+            "full_name": "CSRF User",
+            "temporary_password": "Temporary-pass-123",
+        }
+        missing = client.post("/api/v3/admin/accounts", json=payload)
+        invalid = client.post("/api/v3/admin/accounts", json=payload, headers={"X-CSRF-Token": "invalid"})
+        valid = client.post("/api/v3/admin/accounts", json=payload, headers={"X-CSRF-Token": csrf})
         assert missing.status_code == invalid.status_code == 403
         assert missing.json()["detail"]["reason_code"] == "CSRF_VALIDATION_FAILED"
         assert invalid.json()["detail"]["reason_code"] == "CSRF_VALIDATION_FAILED"
@@ -132,7 +149,7 @@ def test_admin_api_rejects_session_that_must_change_password(tmp_path: Path) -> 
         assert created.status_code == 201
         client.cookies.clear()
         sign_in(client, "new-admin", "Temporary-pass-123")
-        response = client.get("/api/admin/dashboard")
+        response = client.get("/api/v3/admin/dashboard")
         assert response.status_code == 403
         assert response.json()["detail"]["reason_code"] == "PASSWORD_CHANGE_REQUIRED"
 
@@ -141,4 +158,4 @@ def test_logout_ends_admin_api_access(tmp_path: Path) -> None:
     with unauthenticated_client(tmp_path) as client:
         csrf = sign_in(client)
         assert client.post("/api/v3/auth/logout", headers={"X-CSRF-Token": csrf}).status_code == 204
-        assert client.get("/api/admin/dashboard").status_code == 401
+        assert client.get("/api/v3/admin/dashboard").status_code == 401

@@ -9,11 +9,12 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.db.database import Database
+from app.main import cleanup_expired_attempt_snapshots
 from app.services.biometrics.embedding import serialize_embedding
 from app.services.biometrics.models import FaceObservation, FrameAnalysis, QualityResult
 from app.services.challenges import BlinkStateMachine, BlinkTemporalState, ChallengeService, EphemeralCapture
 from app.services.repository import Repository
-from tests.conftest import record_verification
+from tests.conftest import create_account, enroll_photos, record_verification
 
 
 def analysis(yaw: float = 0.0, ear: float = 0.25) -> FrameAnalysis:
@@ -203,88 +204,69 @@ def test_invalid_challenge_sequence_is_rejected(tmp_path: Path) -> None:
     assert repository.verifications()[0]["reason_code"] == "INVALID_CHALLENGE_SEQUENCE"
 
 
-def test_admin_user_creation_and_blocked_verification(client: TestClient) -> None:
-    created = client.post(
-        "/api/admin/users",
-        json={"external_id": "blocked", "display_name": "Blocked", "status": "BLOCKED", "comment": "test"},
-    )
-    assert created.status_code == 201
+def test_blocked_account_cannot_start_a_verification_challenge(client: TestClient) -> None:
+    user_id = create_account(client, "blocked", status="BLOCKED")
     client.app.state.repository.upsert_template(
         "blocked", "test", "1", serialize_embedding(np.asarray([1.0, 0.0, 0.0], dtype=np.float32)), 3, 3
     )
     service = ChallengeService(client.app.state.repository, client.app.state.settings)
     with pytest.raises(PermissionError):
         service.create("blocked")
-    assert client.get("/api/admin/users/blocked").json()["status"] == "BLOCKED"
+    assert client.get(f"/api/v3/admin/accounts/{user_id}").json()["status"] == "BLOCKED"
 
 
 def test_admin_photo_enrollment_with_per_file_results(client: TestClient) -> None:
-    client.post("/api/admin/users", json={"external_id": "photo", "display_name": "Photo"})
+    user_id = create_account(client, "photo")
     files = [
         ("photos", ("good-1.jpg", b"face", "image/jpeg")),
         ("photos", ("bad.jpg", b"multiple", "image/jpeg")),
         ("photos", ("good-2.jpg", b"face", "image/jpeg")),
         ("photos", ("good-3.jpg", b"face", "image/jpeg")),
     ]
-    response = client.post("/api/admin/users/photo/enrollment/photos", files=files)
-    body = response.json()
+    body = enroll_photos(client, user_id, files).json()
     assert body["template_created"] is True
     assert body["accepted_frames"] == 3
     assert body["results"][1]["reason_code"] == "MULTIPLE_FACES"
 
 
 def test_insufficient_valid_photo_enrollment(client: TestClient) -> None:
-    client.post("/api/admin/users", json={"external_id": "few", "display_name": "Few"})
+    user_id = create_account(client, "few")
     files = [
         ("photos", ("good.jpg", b"face", "image/jpeg")),
         ("photos", ("bad.jpg", b"invalid", "image/jpeg")),
         ("photos", ("many.jpg", b"multiple", "image/jpeg")),
     ]
-    body = client.post("/api/admin/users/few/enrollment/photos", files=files).json()
+    body = enroll_photos(client, user_id, files).json()
     assert body["template_created"] is False
     assert body["status"] == "INSUFFICIENT_VALID_IMAGES"
 
 
-def test_histories_attempt_details_and_audit(client: TestClient, enrolled: None) -> None:
-    record_verification(client, "alice")
-    user_rows = client.get("/api/admin/users/alice/verifications").json()
-    global_rows = client.get("/api/admin/verifications").json()
-    assert len(user_rows) == len(global_rows) == 1
-    detail = client.get(f"/api/admin/verifications/{user_rows[0]['id']}").json()
-    assert detail["claimed_external_id"] == "alice"
-    assert detail["audit_events"][0]["event_type"] == "VERIFICATION_SUCCEEDED"
-
-
-def test_attempt_snapshots_disabled_and_retention_cleanup(client: TestClient, tmp_path: Path) -> None:
+def test_historical_attempts_keep_their_audit_link(client: TestClient, enrolled: int) -> None:
+    attempt_id = record_verification(client, "alice")
     repository = client.app.state.repository
-    assert client.get("/api/admin/settings").json()["store_attempt_images"] is False
-    attempt_id = repository.add_verification(
-        {
-            "user_id": None,
-            "claimed_external_id": "nobody",
-            "timestamp": datetime.now(UTC).isoformat(),
-            "face_detected": 0,
-            "quality_score": None,
-            "liveness_score": None,
-            "similarity_score": None,
-            "threshold": 0.363,
-            "result": "REJECTED",
-            "reason_code": "NO_FACE",
-            "inference_time_ms": 1.0,
-        }
-    )
-    assert repository.get_snapshot(attempt_id) is None
-    snapshot_dir = client.app.state.settings.attempt_image_dir
+    assert [row["id"] for row in repository.user_verifications("alice")] == [attempt_id]
+    assert repository.get_verification(attempt_id)["claimed_external_id"] == "alice"
+    linked = [event for event in repository.audit_events(500) if event.get("attempt_id") == attempt_id]
+    assert [event["event_type"] for event in linked] == ["VERIFICATION_SUCCEEDED"]
+
+
+def test_expired_attempt_snapshots_are_removed_at_startup(client: TestClient) -> None:
+    repository = client.app.state.repository
+    settings = client.app.state.settings
+    attempt_id = record_verification(client, "nobody", "REJECTED")
+    keep_id = record_verification(client, "nobody", "REJECTED")
+    snapshot_dir = settings.attempt_image_dir
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     (snapshot_dir / "expired.jpg").write_bytes(b"demo")
-    repository.add_snapshot(
-        attempt_id,
-        "expired.jpg",
-        datetime.now(UTC).isoformat(),
-        (datetime.now(UTC) - timedelta(days=1)).isoformat(),
-    )
-    assert client.post("/api/admin/snapshots/cleanup").json()["deleted"] == 1
+    (snapshot_dir / "current.jpg").write_bytes(b"demo")
+    now = datetime.now(UTC)
+    repository.add_snapshot(attempt_id, "expired.jpg", now.isoformat(), (now - timedelta(days=1)).isoformat())
+    repository.add_snapshot(keep_id, "current.jpg", now.isoformat(), (now + timedelta(days=1)).isoformat())
+    assert cleanup_expired_attempt_snapshots(repository, settings) == 1
     assert not (snapshot_dir / "expired.jpg").exists()
+    assert (snapshot_dir / "current.jpg").exists()
+    assert repository.get_snapshot(attempt_id) is None
+    assert repository.get_snapshot(keep_id) is not None
 
 
 def test_localization_contains_ru_and_en() -> None:
