@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -77,9 +78,10 @@ def client(tmp_path: Path) -> TestClient:
         session_secret=TEST_SESSION_KEY,
     )
     with TestClient(create_app(settings, FakePipeline())) as test_client:  # type: ignore[arg-type]
+        # The bootstrap ADMIN account signs in through the regular V3 entry point.
         login = test_client.post(
-            "/api/admin/auth/login",
-            json={"username": TEST_ADMIN_NAME, "password": TEST_AUTH_INPUT},
+            "/api/v3/auth/password",
+            json={"login": TEST_ADMIN_NAME, "password": TEST_AUTH_INPUT},
         )
         assert login.status_code == 200
         test_client.headers["X-CSRF-Token"] = login.json()["csrf_token"]
@@ -92,6 +94,31 @@ def images() -> list[tuple[str, tuple[str, bytes, str]]]:
 
 
 @pytest.fixture
-def enrolled(client: TestClient, images: list[tuple[str, tuple[str, bytes, str]]]) -> None:
-    response = client.post("/api/enroll", data={"external_id": "alice", "display_name": "Alice"}, files=images)
-    assert response.status_code == 201
+def enrolled(client: TestClient) -> None:
+    created = client.post("/api/admin/users", json={"external_id": "alice", "display_name": "Alice"})
+    assert created.status_code == 201
+    photos = [("photos", (f"photo-{index}.jpg", b"face", "image/jpeg")) for index in range(3)]
+    enrollment = client.post("/api/admin/users/alice/enrollment/photos", files=photos)
+    assert enrollment.json()["template_created"] is True
+
+
+def record_verification(client: TestClient, external_id: str, result: str = "VERIFIED") -> int:
+    """Store a historical 1:1 attempt as the removed V2 /api/verify endpoint used to."""
+    repository = client.app.state.repository
+    user = repository.get_user(external_id)
+    attempt_id: int = repository.add_verification(
+        {
+            "user_id": user["id"] if user else None,
+            "claimed_external_id": external_id,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "face_detected": 1,
+            "quality_score": 0.9,
+            "liveness_score": 0.88,
+            "similarity_score": 0.9,
+            "threshold": 0.363,
+            "result": result,
+            "reason_code": "MATCH" if result == "VERIFIED" else "FACE_MISMATCH",
+            "inference_time_ms": 1.0,
+        }
+    )
+    return attempt_id

@@ -72,16 +72,6 @@ def test_recovery_limit_survives_restart(client: TestClient, monkeypatch: pytest
         assert limited.json()["detail"]["reason_code"] == "RECOVERY_RATE_LIMITED"
 
 
-def test_legacy_admin_lockout_survives_restart(client: TestClient) -> None:
-    for _ in range(client.app.state.settings.admin_login_max_attempts):
-        rejected = client.post("/api/admin/auth/login", json={"username": TEST_ADMIN_NAME, "password": "wrong"})
-        assert rejected.status_code == 401
-    with restarted(client) as fresh:
-        locked = fresh.post("/api/admin/auth/login", json={"username": TEST_ADMIN_NAME, "password": TEST_AUTH_INPUT})
-        assert locked.status_code == 429
-        assert locked.json()["detail"]["reason_code"] == "ADMIN_LOGIN_RATE_LIMITED"
-
-
 def test_counters_store_no_plaintext_login_or_address(client: TestClient) -> None:
     client.post("/api/v3/auth/password", json={"login": "secret-login", "password": "Wrong-password-1"})
     client.post("/api/v3/face/challenges")

@@ -27,6 +27,7 @@ def test_javascript_runtime_regressions(suite: str) -> None:
 
 
 def test_login_loads_guidance_before_controller_and_is_not_cached(client: TestClient) -> None:
+    client.cookies.delete("biogate_session")
     response = client.get("/")
     assert response.status_code == 200
     assert "no-store" in response.headers["cache-control"]
@@ -60,6 +61,7 @@ def test_face_login_geometry_is_observational_and_center_remains_server_owned(cl
 
 
 def test_user_frame_feedback_requires_session_csrf_and_does_not_enroll(client: TestClient) -> None:
+    client.cookies.delete("biogate_session")
     photo = {"photo": ("frame.jpg", b"face", "image/jpeg")}
     assert client.post("/api/v3/user/biometric-frame", files=photo).status_code == 401
     v3_admin_login(client)

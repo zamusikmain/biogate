@@ -5,10 +5,8 @@ from fastapi import Depends, HTTPException, Request
 
 from app.core.config import Settings
 from app.services.account_auth import ACCOUNT_COOKIE_NAME, AccountAuthService, AccountSession
-from app.services.auth import ADMIN_COOKIE_NAME, AdminAuthService, AdminSession
 from app.services.biometric_workflow import BiometricWorkflowService
 from app.services.biometrics.pipeline import BiometricPipeline
-from app.services.challenges import ChallengeService
 from app.services.face_login import FaceLoginService
 from app.services.identification import IdentificationService
 from app.services.repository import Repository
@@ -25,14 +23,6 @@ def get_pipeline(request: Request) -> BiometricPipeline:
 
 def get_app_settings(request: Request) -> Settings:
     return cast(Settings, request.app.state.settings)
-
-
-def get_challenge_service(request: Request) -> ChallengeService:
-    return cast(ChallengeService, request.app.state.challenge_service)
-
-
-def get_auth_service(request: Request) -> AdminAuthService:
-    return cast(AdminAuthService, request.app.state.auth_service)
 
 
 def get_account_auth_service(request: Request) -> AccountAuthService:
@@ -99,33 +89,27 @@ def require_account_admin(
 
 def require_admin_session(
     request: Request,
-    auth: Annotated[AdminAuthService, Depends(get_auth_service)],
     account_auth: Annotated[AccountAuthService, Depends(get_account_auth_service)],
-) -> AdminSession | AccountSession:
-    account_session = account_auth.get_session(request.cookies.get(ACCOUNT_COOKIE_NAME))
-    if account_session and account_session.role == "ADMIN":
-        if account_session.must_change_password:
-            raise HTTPException(403, detail={"reason_code": "PASSWORD_CHANGE_REQUIRED"})
-        return account_session
-    session = auth.get_session(request.cookies.get(ADMIN_COOKIE_NAME))
+) -> AccountSession:
+    """ADMIN account session for the /api/admin/* endpoints the console still uses."""
+    session = account_auth.get_session(request.cookies.get(ACCOUNT_COOKIE_NAME))
     if not session:
         raise HTTPException(401, detail={"reason_code": "ADMIN_AUTH_REQUIRED"})
+    if session.role != "ADMIN":
+        raise HTTPException(403, detail={"reason_code": "ADMIN_REQUIRED"})
+    if session.must_change_password:
+        raise HTTPException(403, detail={"reason_code": "PASSWORD_CHANGE_REQUIRED"})
     return session
 
 
 def require_admin_csrf(
     request: Request,
-    session: Annotated[AdminSession | AccountSession, Depends(require_admin_session)],
-    auth: Annotated[AdminAuthService, Depends(get_auth_service)],
+    session: Annotated[AccountSession, Depends(require_admin_session)],
 ) -> None:
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return
     token = request.headers.get("X-CSRF-Token")
-    if isinstance(session, AccountSession):
-        valid = bool(token) and secrets.compare_digest(token or "", session.csrf_token)
-    else:
-        valid = auth.validate_csrf(session, token)
-    if not valid:
+    if not (token and secrets.compare_digest(token, session.csrf_token)):
         raise HTTPException(403, detail={"reason_code": "CSRF_VALIDATION_FAILED"})
 
 
