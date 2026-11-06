@@ -127,7 +127,7 @@ An administrator can set or generate a temporary password. Only the hash is stor
 5. Success creates a short-lived, single-use reset authorization whose token is stored only as a hash.
 6. A successful reset revokes every account session and emits audit, security, and notification events.
 
-Recovery starts and password attempts are rate-limited. Security questions, email, and SMS are intentionally absent.
+Recovery starts and password attempts are rate-limited. Face login and recovery challenges are also limited per client address (`BIOGATE_FACE_LOGIN_MAX_ATTEMPTS` per `BIOGATE_FACE_LOGIN_WINDOW_SECONDS`, default 10 per 5 minutes, then HTTP 429 `FACE_LOGIN_RATE_LIMITED`). Unfinished challenges live in memory with a cap per client (`BIOGATE_FACE_LOGIN_MAX_ACTIVE_PER_CLIENT`, the oldest is dropped) and per process (`BIOGATE_FACE_LOGIN_MAX_ACTIVE_CHALLENGES`, then HTTP 429 `FACE_LOGIN_BUSY`); expired ones are pruned. Security questions, email, and SMS are intentionally absent.
 
 ## Sessions, CSRF, and authorization
 

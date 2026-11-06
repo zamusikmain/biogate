@@ -204,12 +204,28 @@ def revoke_own_session(
 
 @router.post("/face/challenges")
 def create_face_challenge(
+    request: Request,
     service: Annotated[FaceLoginService, Depends(get_face_login_service)],
+    repository: Annotated[Repository, Depends(get_repository)],
 ) -> dict[str, Any]:
+    address, agent = _client(request)
     try:
-        return service.create("IDENTIFY")
+        return service.create("IDENTIFY", client_address=address)
     except ValueError as error:
         raise HTTPException(403, detail={"reason_code": str(error)}) from error
+    except PermissionError as error:
+        reason = str(error)
+        if reason == "FACE_LOGIN_RATE_LIMITED":
+            repository.add_access_event(
+                {
+                    "method": "FACE",
+                    "result": "DENIED",
+                    "reason": reason,
+                    "client_address": address,
+                    "user_agent": agent,
+                }
+            )
+        raise HTTPException(429, detail={"reason_code": reason}, headers={"Retry-After": "60"}) from error
 
 
 @router.post("/recovery/challenges")
