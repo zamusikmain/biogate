@@ -255,6 +255,8 @@ On the first run it:
 
 Existing values in `.env` are never overwritten. The same steps without the browser: `powershell -ExecutionPolicy Bypass -File scripts\run.ps1` (add `-Dev` for test tools, `-Port 8080` to change the port). Do not commit `.env`.
 
+BioGate listens on `127.0.0.1` only. To use a terminal on another computer (browsers allow the camera only over HTTPS or on `localhost`), put a local TLS reverse proxy in front, set `BIOGATE_ADMIN_COOKIE_SECURE=true` and start with `-BehindProxy`; [docs/NETWORK.md](docs/NETWORK.md) has the full steps, including the firewall rule.
+
 Manual equivalent:
 
 ```powershell
