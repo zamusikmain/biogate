@@ -220,6 +220,13 @@ CREATE TABLE IF NOT EXISTS admin_notes (
   text TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS rate_limit_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bucket TEXT NOT NULL,
+  key TEXT NOT NULL,
+  occurred_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_rate_limit_events_key ON rate_limit_events(bucket, key, occurred_at);
 CREATE TABLE IF NOT EXISTS backups (
   id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL,

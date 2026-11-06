@@ -3,12 +3,13 @@ import hmac
 import secrets
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from argon2 import PasswordHasher, Type
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
 from app.core.config import Settings
+from app.services.rate_limit import ADMIN_LOGIN_FAILURES, ADMIN_LOGIN_LOCKS, RateLimitStore
 from app.services.repository import Repository
 
 ADMIN_COOKIE_NAME = "biogate_admin_session"
@@ -34,12 +35,6 @@ class AdminSession:
     expires_at: float
 
 
-@dataclass
-class LoginAttemptBucket:
-    failures: list[float] = field(default_factory=list)
-    locked_until: float = 0.0
-
-
 class AdminAuthService:
     """Local, process-bound admin sessions with signed opaque cookies."""
 
@@ -48,7 +43,7 @@ class AdminAuthService:
         self.repository = repository
         self.password_hasher = PasswordHasher(type=Type.ID)
         self._sessions: dict[str, AdminSession] = {}
-        self._attempts: dict[str, LoginAttemptBucket] = {}
+        self.rate_limits = RateLimitStore(repository.db)
         self._lock = threading.RLock()
 
     @property
@@ -63,8 +58,7 @@ class AdminAuthService:
         if not self.configured:
             raise AuthNotConfiguredError
         now = time.time()
-        with self._lock:
-            self._check_rate_limit(client_key, now)
+        self._check_rate_limit(client_key, now)
 
         configured_username = self.settings.admin_username
         password_hash = self.settings.admin_password_hash.get_secret_value()
@@ -76,8 +70,7 @@ class AdminAuthService:
             password_matches = False
 
         if not username_matches or not password_matches:
-            with self._lock:
-                self._record_failure(client_key, now)
+            self._record_failure(client_key, now)
             self.repository.add_audit("ADMIN_LOGIN_FAILED", None, "REJECTED", {"reason_code": "INVALID_CREDENTIALS"})
             raise InvalidCredentialsError
 
@@ -88,8 +81,8 @@ class AdminAuthService:
             csrf_token=secrets.token_urlsafe(32),
             expires_at=now + self.settings.admin_session_ttl_seconds,
         )
+        self._clear_attempts(client_key)
         with self._lock:
-            self._attempts.pop(client_key, None)
             self._sessions[session_id] = session
             self._remove_expired_sessions(now)
         self.repository.add_audit("ADMIN_LOGIN_SUCCESS", None, "SUCCESS", {"username": configured_username})
@@ -157,28 +150,28 @@ class AdminAuthService:
         expected = self._signed_cookie(session_id).rsplit(".", 1)[1]
         return session_id if hmac.compare_digest(signature, expected) else None
 
+    def _attempt_key(self, client_key: str) -> str:
+        secret = self.settings.session_secret.get_secret_value()
+        return hmac.new(secret.encode(), f"admin|{client_key}".encode(), hashlib.sha256).hexdigest()
+
     def _check_rate_limit(self, client_key: str, now: float) -> None:
-        bucket = self._attempts.get(client_key)
-        if not bucket:
-            return
-        if bucket.locked_until > now:
+        key = self._attempt_key(client_key)
+        if self.rate_limits.stats(ADMIN_LOGIN_LOCKS, key, self.settings.admin_login_cooldown_seconds, now).count:
             self.repository.add_audit("ADMIN_LOGIN_FAILED", None, "REJECTED", {"reason_code": "RATE_LIMITED"})
             raise LoginRateLimitedError
-        bucket.failures = [
-            moment for moment in bucket.failures if now - moment <= self.settings.admin_login_window_seconds
-        ]
-        if not bucket.failures:
-            self._attempts.pop(client_key, None)
 
     def _record_failure(self, client_key: str, now: float) -> None:
-        bucket = self._attempts.setdefault(client_key, LoginAttemptBucket())
-        bucket.failures = [
-            moment for moment in bucket.failures if now - moment <= self.settings.admin_login_window_seconds
-        ]
-        bucket.failures.append(now)
-        if len(bucket.failures) >= self.settings.admin_login_max_attempts:
-            bucket.failures.clear()
-            bucket.locked_until = now + self.settings.admin_login_cooldown_seconds
+        key = self._attempt_key(client_key)
+        self.rate_limits.record(ADMIN_LOGIN_FAILURES, key, now)
+        failures = self.rate_limits.stats(ADMIN_LOGIN_FAILURES, key, self.settings.admin_login_window_seconds, now)
+        if failures.count >= self.settings.admin_login_max_attempts:
+            self.rate_limits.clear(ADMIN_LOGIN_FAILURES, key)
+            self.rate_limits.record(ADMIN_LOGIN_LOCKS, key, now)
+
+    def _clear_attempts(self, client_key: str) -> None:
+        key = self._attempt_key(client_key)
+        self.rate_limits.clear(ADMIN_LOGIN_FAILURES, key)
+        self.rate_limits.clear(ADMIN_LOGIN_LOCKS, key)
 
     def _remove_expired_sessions(self, now: float) -> None:
         expired = [session_id for session_id, session in self._sessions.items() if session.expires_at <= now]
