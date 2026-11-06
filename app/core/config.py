@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     recovery_authorization_ttl_seconds: int = Field(default=5 * 60, ge=60, le=30 * 60)
     recovery_max_attempts: int = Field(default=5, ge=2, le=20)
     recovery_window_seconds: int = Field(default=10 * 60, ge=60, le=24 * 60 * 60)
+    # Face login and recovery challenges started from one client address within the window.
+    face_login_max_attempts: int = Field(default=10, ge=2, le=100)
+    face_login_window_seconds: int = Field(default=5 * 60, ge=30, le=60 * 60)
+    # Live (unfinished, unexpired) challenges held in memory, per client and for the whole process.
+    face_login_max_active_per_client: int = Field(default=3, ge=1, le=20)
+    face_login_max_active_challenges: int = Field(default=200, ge=10, le=10_000)
     allow_face_login: bool = True
     allow_password_login: bool = True
     debug: bool = False

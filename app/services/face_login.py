@@ -26,6 +26,7 @@ class FaceLoginState:
     sequence: list[str]
     expires_at: datetime
     target_user_id: int | None = None
+    client_key: str = ""
     index: int = 0
     blink_phase: str = "WAITING_OPEN"
     last_capture_at: datetime | None = None
@@ -49,11 +50,24 @@ class FaceLoginService:
         self.blink = BlinkStateMachine()
         self._states: dict[str, FaceLoginState] = {}
         self._recovery_starts: dict[str, list[datetime]] = {}
+        self._client_starts: dict[str, list[datetime]] = {}
         self._lock = threading.RLock()
 
     def create(self, mode: str = "IDENTIFY", login: str | None = None, client_address: str = "") -> dict[str, Any]:
+        """Start a challenge.
+
+        Raises ValueError when face login is disabled and PermissionError with a
+        reason code when the client or the process is over its limits.
+        """
         if mode == "IDENTIFY" and not self.settings.allow_face_login:
             raise ValueError("FACE_LOGIN_DISABLED")
+        client_key = self._client_key(client_address)
+        now = datetime.now(UTC)
+        with self._lock:
+            self._prune_expired(now)
+            self._record_client_start(client_key, now)
+            if len(self._states) >= self.settings.face_login_max_active_challenges:
+                raise PermissionError("FACE_LOGIN_BUSY")
         target_user_id = None
         if mode == "RECOVERY" and login:
             self._record_recovery_start(login, client_address)
@@ -68,17 +82,29 @@ class FaceLoginService:
                 target_user_id = int(user["id"])
         tail = ["TURN_LEFT", "TURN_RIGHT", "BLINK"]
         secrets.SystemRandom().shuffle(tail)
-        now = datetime.now(UTC)
         state = FaceLoginState(
             id=str(uuid.uuid4()),
             mode=mode,
             sequence=["CENTER", *tail],
             expires_at=now + timedelta(seconds=self.settings.challenge_ttl_seconds),
             target_user_id=target_user_id,
+            client_key=client_key,
         )
         with self._lock:
+            # A client that keeps restarting only holds its newest challenges; older
+            # unfinished ones are abandoned anyway and are dropped first.
+            own = [item for item in self._states.values() if item.client_key == client_key]
+            for stale in sorted(own, key=lambda item: item.expires_at)[
+                : max(0, len(own) - self.settings.face_login_max_active_per_client + 1)
+            ]:
+                self._states.pop(stale.id, None)
             self._states[state.id] = state
         return self._public_state(state)
+
+    @property
+    def active_challenges(self) -> int:
+        with self._lock:
+            return len(self._states)
 
     def expected_action(self, challenge_id: str) -> str:
         with self._lock:
@@ -253,6 +279,29 @@ class FaceLoginService:
             return True
         elapsed_ms = (now - state.last_capture_at).total_seconds() * 1000
         return elapsed_ms >= self.settings.challenge_cooldown_ms
+
+    def _client_key(self, client_address: str) -> str:
+        secret = self.settings.session_secret.get_secret_value()
+        return hmac.new(secret.encode(), f"face|{client_address}".encode(), hashlib.sha256).hexdigest()
+
+    def _prune_expired(self, now: datetime) -> None:
+        for state_id in [key for key, state in self._states.items() if state.expires_at <= now]:
+            del self._states[state_id]
+        cutoff = now - timedelta(seconds=self.settings.face_login_window_seconds)
+        for key in [key for key, starts in self._client_starts.items() if not starts or starts[-1] < cutoff]:
+            del self._client_starts[key]
+        recovery_cutoff = now - timedelta(seconds=self.settings.recovery_window_seconds)
+        for key in [key for key, starts in self._recovery_starts.items() if not starts or starts[-1] < recovery_cutoff]:
+            del self._recovery_starts[key]
+
+    def _record_client_start(self, client_key: str, now: datetime) -> None:
+        cutoff = now - timedelta(seconds=self.settings.face_login_window_seconds)
+        starts = [item for item in self._client_starts.get(client_key, []) if item >= cutoff]
+        if len(starts) >= self.settings.face_login_max_attempts:
+            self._client_starts[client_key] = starts
+            raise PermissionError("FACE_LOGIN_RATE_LIMITED")
+        starts.append(now)
+        self._client_starts[client_key] = starts
 
     def _record_recovery_start(self, login: str, client_address: str) -> None:
         secret = self.settings.session_secret.get_secret_value()
