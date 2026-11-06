@@ -10,7 +10,6 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
-from app.api.admin import read_enrollment_photo
 from app.api.dependencies import (
     get_account_auth_service,
     get_app_settings,
@@ -26,6 +25,7 @@ from app.api.dependencies import (
     require_full_account_session,
 )
 from app.api.event_safety import safe_event_row
+from app.api.v3_enrollment import read_enrollment_photo
 from app.core.config import Settings
 from app.schemas.v3 import (
     AccountCreateRequest,
@@ -951,6 +951,16 @@ def all_security_events(
     rows = repository.security_events(limit, offset)
     context = repository.security_events(1000, 0)
     return [safe_event_row(row) for row in annotate_risk(rows, context)]
+
+
+@router.get("/admin/audit-events")
+def all_audit_events(
+    _: Annotated[AccountSession, Depends(require_account_admin)],
+    repository: Annotated[Repository, Depends(get_repository)],
+    limit: int = Query(25, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> list[dict[str, Any]]:
+    return [safe_event_row(row) for row in repository.audit_events(limit, offset)]
 
 
 @router.get("/admin/unknown-faces")

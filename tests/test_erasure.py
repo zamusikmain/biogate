@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.services.biometrics.embedding import serialize_embedding
-from tests.conftest import TEST_ADMIN_NAME
 from tests.test_v3 import v3_admin_login
 
 PERSON_LOGIN = "erase-me"
@@ -148,34 +147,6 @@ def test_erasure_removes_person_templates_samples_files_and_identifying_event_da
     client.cookies.delete("biogate_session")
     login = client.post("/api/v3/auth/password", json={"login": PERSON_LOGIN, "password": "Erase-me-pass-123"})
     assert login.status_code == 401
-
-
-def test_legacy_admin_delete_performs_the_same_complete_erasure(client: TestClient) -> None:
-    seeded = _seed_person(client)
-    settings: Settings = client.app.state.settings
-    storage = client.app.state.evidence_storage
-    active_path = storage.resolve(seeded["active"])
-    archived_path = storage.resolve(seeded["archived"])
-
-    response = client.delete(f"/api/admin/users/{PERSON_LOGIN}")
-    assert response.status_code == 200
-    assert response.json() == {"deleted": True}
-    assert not active_path.exists()
-    assert not archived_path.exists()
-    assert not seeded["snapshot"].exists()
-    assert storage.resolve(seeded["unrelated"]).exists()
-
-    db = settings.db_path
-    assert not _rows(db, "SELECT 1 FROM users WHERE login=?", (PERSON_LOGIN,))
-    assert not _rows(db, "SELECT 1 FROM biometric_template_samples")
-    audit_text = json.dumps([dict(row) for row in _rows(db, "SELECT * FROM audit_events")])
-    assert PERSON_LOGIN not in audit_text
-    assert PERSON_NAME not in audit_text
-    erased = _rows(db, "SELECT metadata FROM audit_events WHERE event_type='ACCOUNT_ERASED'")
-    metadata = json.loads(erased[0]["metadata"])
-    assert metadata["reason"] == "LEGACY_ADMIN_DELETE"
-    assert metadata["admin_id"] == client.app.state.repository.get_user_by_login(TEST_ADMIN_NAME)["id"]
-    assert client.delete(f"/api/admin/users/{PERSON_LOGIN}").status_code == 404
 
 
 def test_erasure_requires_confirmation_reason_and_admin(client: TestClient) -> None:

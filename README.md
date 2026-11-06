@@ -41,7 +41,7 @@ _Screenshots and a short face-login GIF will be added here._
 
 BioGate V3 is a standalone, local-first biometric identity and access management system. It combines password authentication, face login without preselecting an account, a separate USER application, an ADMIN console, approval-based biometric updates, evidence storage, audit/security events, and local backup/restore.
 
-The normal V3 lifecycle uses one account, role, server-side session, and backend RBAC model. `/` is the unified password/face entry point; USER accounts are routed to `/user` and ADMIN accounts to `/admin`. The separate V2 administrator login (`/admin/login`, `/api/admin/auth/*`) and the public V2 verification API (`/api/enroll`, `/api/verify`, `/api/users`, `/api/verification-sessions`) were removed; `/admin/login` now redirects to `/`. The remaining `/api/admin/*` endpoints used by the console accept only an ADMIN account session with its CSRF token.
+The normal V3 lifecycle uses one account, role, server-side session, and backend RBAC model. `/` is the unified password/face entry point; USER accounts are routed to `/user` and ADMIN accounts to `/admin`. The separate V2 administrator login (`/admin/login`, `/api/admin/auth/*`) and the public V2 verification API (`/api/enroll`, `/api/verify`, `/api/users`, `/api/verification-sessions`) were removed; `/admin/login` now redirects to `/`. The legacy `/api/admin/*` console API was replaced by `/api/v3/admin`: biometric enrollment is `/api/v3/admin/accounts/{id}/enrollment/photos` and `/enrollment/validate`, the audit list is `/api/v3/admin/audit-events`. Old `/admin/users/{external_id}` and `/admin/verifications/{id}` links redirect into the console. Historical V2 verification attempts stay in SQLite; their snapshots are deleted at startup once their retention date passes.
 
 It is designed for Windows and CPU execution with SQLite. It has no required cloud API, paid service, Docker, Kubernetes, or IncidentAI dependency.
 
@@ -175,8 +175,6 @@ Preview responses use the recorded image MIME inline. Explicit downloads reuse t
 - surviving audit, security, access and verification rows lose the link to the person: `user_id` becomes `NULL`, metadata is replaced by `{"erased_subject": true, "erasure_id": ...}`, IP address, user agent and claimed login are cleared, and candidate references in face-identification events are nulled;
 - one `ACCOUNT_ERASED` audit record keeps the erasure ID, administrator ID, reason and file counts. Do not put personal data into the reason.
 
-The legacy `DELETE /api/admin/users/{external_id}` performs the same erasure (recorded with reason `LEGACY_ADMIN_DELETE`).
-
 A file that cannot be removed is reported in the response and raises a critical `ERASURE_FILES_REMAINING` security event.
 
 **Existing backups are not rewritten.** A backup is a sealed, hash-verified snapshot, so a person erased today still exists in older ZIP files. The policy is:
@@ -222,7 +220,7 @@ The tool never reads the application database, evidence or `.env`, and never cha
 
 ## OpenAPI
 
-`/docs` documents the consumer-facing BioGate V3 API grouped into Authentication, Users, Biometrics, Access, Evidence, Sessions, Admin, Backups, and Health. Controlled error status codes are included. Legacy and implementation-specific compatibility endpoints continue to operate but are intentionally omitted from `/openapi.json`.
+`/docs` documents the consumer-facing BioGate V3 API grouped into Authentication, Users, Biometrics, Access, Evidence, Sessions, Admin, Backups, and Health. Controlled error status codes are included. Only `/api/v3/*` and `/health` are documented; the probe endpoints `/health/live` and `/health/ready` are omitted from `/openapi.json`.
 
 ## Localization, themes, and responsive UI
 

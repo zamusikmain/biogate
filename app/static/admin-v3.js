@@ -8,11 +8,6 @@ window.loadBioGateV3Admin = async view => {
     v3LiveSource.close();
     v3LiveSource = null;
   }
-  if (!accountAuth && ['access', 'biometric-requests', 'security-events', 'unknown-faces', 'archive', 'live', 'backups'].includes(view)) {
-    const target = document.querySelector(`#${view} > div:last-child`);
-    if (target) target.innerHTML = `<div class="data-card">${L.t('v3AccountRequired')}</div>`;
-    return;
-  }
   if (view === 'access') await loadV3Access();
   if (view === 'events') await loadV3Events();
   if (view === 'biometric-requests') await loadV3BiometricRequests();
@@ -21,7 +16,7 @@ window.loadBioGateV3Admin = async view => {
   if (view === 'archive') await loadV3Archive();
   if (view === 'live') loadV3Live();
   if (view === 'backups') await loadV3Backups();
-  if (view === 'settings' && accountAuth) await loadV3Settings();
+  if (view === 'settings') await loadV3Settings();
 };
 
 async function loadV3Access() {
@@ -46,7 +41,7 @@ function evidenceThumbnail(photoId){const id=encodeURIComponent(photoId);return 
 function startAccessLive(){if(v3LiveSource)v3LiveSource.close();v3LiveSource=new EventSource('/api/v3/admin/live');v3LiveSource.addEventListener('access',event=>{const row=JSON.parse(event.data),feed=$('v3-access-live');if(!feed)return;feed.innerHTML=`<div class="live-row">${row.photo_id?evidenceThumbnail(row.photo_id):'<span>—</span>'}${accountIdentityCell(row)}<span>${esc(humanMethod(row.method))} · ${badge(row.result)}</span><time>${date(row.timestamp)}</time></div>`;bindEvidenceErrors();feed.querySelector('[data-access-photo]')?.addEventListener('click',()=>openPhotoViewer([row.photo_id],0));});v3LiveSource.onerror=()=>{const feed=$('v3-access-live');if(feed)feed.textContent=L.t('reconnecting');};document.querySelectorAll('[data-access-photo]').forEach(button=>button.onclick=()=>openPhotoViewer([button.dataset.accessPhoto],0));}
 
 async function loadV3Events(){
-  const [security,audit]=await Promise.all([api(`/api/v3/admin/security-events?limit=${v3PageSize}&offset=${v3Page.security*v3PageSize}`),api(`/api/admin/audit?limit=${v3PageSize}&offset=${v3Page.security*v3PageSize}`)]);
+  const [security,audit]=await Promise.all([api(`/api/v3/admin/security-events?limit=${v3PageSize}&offset=${v3Page.security*v3PageSize}`),api(`/api/v3/admin/audit-events?limit=${v3PageSize}&offset=${v3Page.security*v3PageSize}`)]);
   const rows=[...security.map(row=>({...row,_category:'security'})),...audit.map(row=>({...row,_category:'audit',severity:row.result}))].sort((a,b)=>String(b.timestamp).localeCompare(String(a.timestamp))).slice(0,v3PageSize);
   table('v3-events',[L.t('time'),L.t('event'),L.t('user'),L.t('category'),L.t('severity'),L.t('risk'),L.t('result'),L.t('actions')],rows.map(row=>[date(row.timestamp),esc(humanCode(row.event_type)),accountIdentityCell(row),L.t(row._category==='security'?'securityCategory':'systemCategory'),badge(row.severity),row.risk?.reason_code?badge(row.risk.risk_level):'—',badge(row.result||row.severity),eventDetailsButton(row,row._category)]));
   renderAdminPager('v3-events',v3Page.security,rows.length,page=>{v3Page.security=page;loadV3Events();});bindEventDetailButtons();

@@ -93,13 +93,38 @@ def images() -> list[tuple[str, tuple[str, bytes, str]]]:
     return [("frames", (f"frame-{index}.jpg", b"face", "image/jpeg")) for index in range(3)]
 
 
+def create_account(
+    client: TestClient, external_id: str, full_name: str | None = None, *, status: str = "ACTIVE"
+) -> int:
+    """Create an account through the admin API; its login equals the External ID."""
+    response = client.post(
+        "/api/v3/admin/accounts",
+        json={
+            "external_id": external_id,
+            "login": external_id,
+            "full_name": full_name or external_id,
+            "status": status,
+            "temporary_password": "Temporary-pass-123",
+        },
+    )
+    assert response.status_code == 201, response.text
+    return int(response.json()["id"])
+
+
+def enroll_photos(client: TestClient, user_id: int, photos: list[tuple[str, tuple[str, bytes, str]]]):  # type: ignore[no-untyped-def]
+    return client.post(f"/api/v3/admin/accounts/{user_id}/enrollment/photos", files=photos)
+
+
+def face_photos(count: int = 3, payload: bytes = b"face") -> list[tuple[str, tuple[str, bytes, str]]]:
+    return [("photos", (f"photo-{index}.jpg", payload, "image/jpeg")) for index in range(count)]
+
+
 @pytest.fixture
-def enrolled(client: TestClient) -> None:
-    created = client.post("/api/admin/users", json={"external_id": "alice", "display_name": "Alice"})
-    assert created.status_code == 201
-    photos = [("photos", (f"photo-{index}.jpg", b"face", "image/jpeg")) for index in range(3)]
-    enrollment = client.post("/api/admin/users/alice/enrollment/photos", files=photos)
+def enrolled(client: TestClient) -> int:
+    user_id = create_account(client, "alice", "Alice")
+    enrollment = enroll_photos(client, user_id, face_photos())
     assert enrollment.json()["template_created"] is True
+    return user_id
 
 
 def record_verification(client: TestClient, external_id: str, result: str = "VERIFIED") -> int:

@@ -3,12 +3,9 @@ const L = window.BioGateLocale;
 let selectedUser = null;
 let adminStream = null;
 let adminCameraGeneration = 0;
-let selectedUserName = '';
 let selectedUserHasBiometrics = false;
-let deleteBiometricInFlight = false;
 let csrfToken = '';
 let adminReady = false;
-let accountAuth = false;
 let selectedV3UserId = null;
 let selectedV3Tab = 'overview';
 let usersPage = 0;
@@ -155,14 +152,10 @@ function show(view) {
   history.replaceState({}, '', view === 'dashboard' ? '/admin' : `/admin#${view}`);
   if (view === 'dashboard') loadDashboard();
   if (view === 'users') loadUsers();
-  if (view === 'attempts') loadAttempts();
-  if (view === 'audit') loadAudit();
-  if (view === 'settings') loadSettings();
   if (window.loadBioGateV3Admin) window.loadBioGateV3Admin(view).catch(error => toast(error.code || error.message));
 }
 
 async function loadDashboard() {
-  if (accountAuth) {
     const data = await api('/api/v3/admin/dashboard');
     const stats = data.metrics;
     const items = [
@@ -175,23 +168,9 @@ async function loadDashboard() {
     table('recent-events', [L.t('date'),L.t('photo'), L.t('user'), L.t('method'), L.t('result')], data.recent_access.map(event => [date(event.timestamp),event.photo_id?evidenceThumbnail(event.photo_id):L.t('photoAbsent'),accountIdentityCell(event), esc(humanMethod(event.method)), badge(event.result)]));bindEvidenceErrors();document.querySelectorAll('[data-access-photo]').forEach(button=>button.onclick=()=>openPhotoViewer([button.dataset.accessPhoto],0));
     const health = await api('/api/v3/admin/system-health');
     $('system-health').innerHTML = `<div class="metric-grid">${Object.entries(health.components).map(([name, value]) => `<div class="metric-card"><span>${esc(name)}</span><strong>${badge(value)}</strong></div>`).join('')}</div><p>${L.t('activeStorage')}: ${health.storage.active.files} · ${Math.round(health.storage.active.size_bytes / 1024)} KB &nbsp; ${L.t('archive')}: ${health.storage.archive.files} · ${Math.round(health.storage.archive.size_bytes / 1024)} KB</p>`;
-    return;
-  }
-  const data = await api('/api/admin/dashboard');
-  const stats = data.stats;
-  const items = [
-    ['totalUsers', stats.total_users], ['enrolledUsers', stats.enrolled_users],
-    ['todayChecks', stats.verifications_today || 0], ['successful', stats.successful_verifications || 0],
-    ['rejectedCount', stats.rejected_verifications || 0], ['avgInference', `${fmt(stats.average_inference_time_ms)} ms`],
-    ['avgSimilarity', pct(stats.average_success_similarity)], ['livenessFailures', stats.liveness_failures || 0],
-    ['qualityFailures', stats.quality_failures || 0],
-  ];
-  $('admin-stats').innerHTML = items.map(([key, value]) => `<div class="metric-card"><span>${L.t(key)}</span><strong>${value}</strong></div>`).join('');
-  table('recent-events', [L.t('date'), L.t('event'), L.t('result')], data.recent_events.map(event => [date(event.timestamp), esc(event.event_type), badge(event.result)]));
 }
 
 async function loadUsers() {
-  if (accountAuth) {
     $('users-list').innerHTML = `<div class="data-card">${L.t('loading')}</div>`;
     const search = $('user-search')?.value || '';
     const status = $('user-status-filter')?.value || '';
@@ -217,13 +196,6 @@ async function loadUsers() {
     });
     document.querySelectorAll('[data-account-reset]').forEach(button => button.onclick = event => { event.stopPropagation(); openPasswordResetDialog(Number(button.dataset.accountReset)); });
     localizePresentationOptions();
-    return;
-  }
-  const users = await api('/api/admin/users');
-  table('users-list', ['User ID', L.t('displayName'), L.t('status'), L.t('biometrics'), L.t('created')], users.map(user => [
-    `<a href="/admin/users/${encodeURIComponent(user.external_id)}">${esc(user.external_id)}</a>`,
-    esc(user.display_name), badge(user.status), user.enrolled_at ? badge('ENROLLED') : '—', date(user.created_at),
-  ]));
 }
 
 async function openV3User(id, tab = 'overview') {
@@ -291,92 +263,13 @@ async function renderV3UserTab(user, tab) {
     const requestActions = request?.status === 'PENDING_REVIEW' ? `<h3>${L.t('availableActions')}</h3><div class="detail-actions"><button data-card-bio-review="APPROVED">${L.t('approve')}</button><button data-card-bio-review="REVISION_REQUIRED">${L.t('revision')}</button><button data-card-bio-review="REJECTED">${L.t('reject')}</button></div>` : request?.status === 'REVISION_REQUIRED' ? `<div class="info-state">${L.t('waitingForBiometricResubmission')}</div>` : request ? `<div class="info-state">${L.t('requestIsReadOnly')}</div>` : '';
     const requestCard = request ? `<div class="v3-card"><h3>${L.t('biometricRequest')}</h3>${field(L.t('status'),humanCode(request.status,'status'))}${field(L.t('created'),date(request.created_at))}${field(L.t('updated'),date(request.updated_at))}${field(L.t('similarity'),pct(request.duplicate_similarity))}${field(L.t('adminComment'),request.admin_comment||'—')}<h3>${L.t('submittedPhotos')}</h3>${requestGallery(summary.photos)}${requestActions}</div>` : '';
     target.innerHTML = `<div class="v3-card"><p>${summary.template ? badge('ENROLLED') : badge('NOT_ENROLLED')}</p>${summary.template ? `${field(L.t('enrollmentDate'),date(summary.template.created_at))}${field(L.t('sampleCount'),summary.template.sample_count)}` : ''}<button id="manage-v3-biometric" class="primary-small">${L.t(summary.template ? 'updateBiometric' : 'addBiometric')}</button> <button id="remove-v3-biometric" class="danger" ${summary.template ? '' : 'disabled'}>${L.t('deleteBiometric')}</button></div>${requestCard}<div class="v3-card"><h3>${L.t('history')}</h3>${summary.history.length?summary.history.map(row=>`<div>${date(row.timestamp)} · ${esc(row.event_type)}</div>`).join(''):`<p>${L.t('noData')}</p>`}</div>`;
-    $('manage-v3-biometric').onclick = () => openEnrollment(user.external_id, Boolean(summary.template));
+    $('manage-v3-biometric').onclick = () => openEnrollment(user.id, Boolean(summary.template));
     bindRequestGallery(target);
     document.querySelectorAll('[data-card-bio-review]').forEach(button => button.onclick = async () => { const decision=button.dataset.cardBioReview; const comment=await adminAsk({title:L.t(decision),message:L.t('reviewDecisionHint'),label:decision==='APPROVED'?'':L.t('adminComment'),required:decision!=='APPROVED',confirmKey:decision==='APPROVED'?'approve':'save',danger:decision==='REJECTED'});if(comment===null)return; button.disabled=true; try { await api(`/api/v3/admin/biometric-requests/${request.id}/review`,jsonOptions('POST',{decision,comment})); await openV3User(user.id,'biometrics'); } finally { button.disabled=false; } });
   }
   if (tab === 'biometrics' && $('remove-v3-biometric') && !$('remove-v3-biometric').disabled) $('remove-v3-biometric').onclick = async () => { const reason=await adminAsk({title:L.t('deleteBiometric'),message:L.t('confirmDeleteBiometric').replace('{name}',user.full_name),label:L.t('actionReason'),required:true,confirmKey:'deleteBiometric',danger:true});if(reason===null)return; await api(`/api/v3/admin/accounts/${user.id}/biometric`, jsonOptions('DELETE', { reason })); await openV3User(user.id, tab); };
 }
 
-async function openUser(id) {
-  selectedUser = id;
-  const [user, historyRows] = await Promise.all([
-    api(`/api/admin/users/${encodeURIComponent(id)}`),
-    api(`/api/admin/users/${encodeURIComponent(id)}/verifications`),
-  ]);
-  const hasBiometrics = Boolean(user.biometric_template_id);
-  selectedUserName = user.display_name;
-  selectedUserHasBiometrics = hasBiometrics;
-  showDirect('user-detail', user.display_name);
-  const biometricActions = hasBiometrics
-    ? `<button data-action="enroll" class="primary-small">${L.t('updateBiometric')}</button><button data-action="delete-bio">${L.t('deleteBiometric')}</button>`
-    : `<button data-action="enroll" class="primary-small">＋ ${L.t('addBiometric')}</button>`;
-  const biometricDetails = hasBiometrics
-    ? `${field(L.t('biometricStatus'), L.t('biometricRegistered'))}${field(L.t('enrollmentDate'), date(user.biometric_created_at || user.enrolled_at))}${field(L.t('model'), user.model_name)}${field(L.t('modelVersion'), user.model_version)}${field(L.t('sampleCount'), user.sample_count)}`
-    : `${field(L.t('biometricStatus'), L.t('biometricNotRegistered'))}`;
-  const emptyState = hasBiometrics ? '' : `<div class="biometric-empty"><h3>${L.t('biometricNotRegistered')}</h3><p>${L.t('biometricRequired')}</p><button data-action="empty-enroll" class="primary-small">＋ ${L.t('addBiometric')}</button></div>`;
-  $('user-card').innerHTML = `
-    <div class="detail-hero"><div><span class="section-label">USER / ${esc(user.external_id)}</span><h2>${esc(user.display_name)}</h2><p>${badge(user.status)} ${hasBiometrics ? badge('ENROLLED') : ''}</p></div>
-    <div class="detail-actions"><button data-action="edit">${L.t('edit')}</button><button data-action="toggle">${L.t(user.status === 'BLOCKED' ? 'unblock' : 'block')}</button>${biometricActions}<button data-action="delete-user">${L.t('deleteUser')}</button></div></div>
-    <div class="profile-grid">${field('User ID', user.external_id)}${field(L.t('displayName'), user.display_name)}${field(L.t('status'), user.status)}${field(L.t('created'), date(user.created_at))}${biometricDetails}${field(L.t('lastVerification'), user.last_verification ? date(user.last_verification) : '—')}${field(L.t('successful'), user.successful || 0)}${field(L.t('rejectedCount'), user.rejected || 0)}</div>
-    ${emptyState}
-    <div class="data-card"><div class="card-heading"><h2>${L.t('history')}</h2><select id="history-filter"><option value="">${L.t('all')}</option><option value="VERIFIED">${L.t('successful')}</option><option value="REJECTED">${L.t('rejectedCount')}</option><option value="LIVENESS_FAILED">${L.t('livenessFailure')}</option><option value="IMAGE_BLURRY">${L.t('qualityFailure')}</option><option value="FACE_MISMATCH">${L.t('faceMismatch')}</option></select></div><div id="user-history"></div></div>`;
-  renderHistory(historyRows);
-  document.querySelector('[data-action="edit"]').onclick = async () => {
-    const name = await adminAsk({title:L.t('edit'),label:L.t('displayName'),required:true,value:user.display_name,confirmKey:'save'});
-    if (name) { await api(`/api/admin/users/${encodeURIComponent(id)}`, jsonOptions('PATCH', { display_name: name })); openUser(id); }
-  };
-  document.querySelector('[data-action="toggle"]').onclick = async () => {
-    await api(`/api/admin/users/${encodeURIComponent(id)}`, jsonOptions('PATCH', { status: user.status === 'BLOCKED' ? 'ACTIVE' : 'BLOCKED' })); openUser(id);
-  };
-  document.querySelector('[data-action="enroll"]').onclick = () => openEnrollment(id, hasBiometrics);
-  if (document.querySelector('[data-action="empty-enroll"]')) document.querySelector('[data-action="empty-enroll"]').onclick = () => openEnrollment(id, false);
-  if (document.querySelector('[data-action="delete-bio"]')) document.querySelector('[data-action="delete-bio"]').onclick = () => openDeleteBiometric(id, user.display_name);
-  document.querySelector('[data-action="delete-user"]').onclick = async () => {
-    if((await adminAsk({title:L.t('deleteUser'),message:L.t('confirmDeleteUser'),confirmKey:'deleteUser',danger:true}))!==null){await api(`/api/admin/users/${encodeURIComponent(id)}`, { method: 'DELETE' }); location.href = '/admin#users';}
-  };
-  $('history-filter').onchange = async event => {
-    const value = event.target.value;
-    const query = value === 'VERIFIED' || value === 'REJECTED' ? `?result=${value}` : value ? `?reason=${value}` : '';
-    renderHistory(await api(`/api/admin/users/${encodeURIComponent(id)}/verifications${query}`));
-  };
-}
-
-function renderHistory(rows) {
-  table('user-history', [L.t('time'), L.t('result'), L.t('similarity'), L.t('threshold'), L.t('quality'), L.t('liveness'), L.t('latency'), L.t('reason')], rows.map(row => [
-    `<a href="/admin/verifications/${row.id}">${date(row.timestamp)}</a>`, badge(row.result), pct(row.similarity_score), pct(row.threshold), pct(row.quality_score), pct(row.liveness_score), `${fmt(row.inference_time_ms)} ms`, esc(humanCode(row.reason_code)),
-  ]));
-}
-
-async function loadAttempts() {
-  const params = new URLSearchParams();
-  [['filter-user', 'user'], ['filter-result', 'result'], ['filter-live', 'liveness'], ['filter-reason', 'reason'], ['filter-from', 'date_from'], ['filter-to', 'date_to']].forEach(([id, key]) => { if ($(id)?.value) params.set(key, $(id).value); });
-  const rows = await api(`/api/admin/verifications?${params}`);
-  table('attempts-list', [L.t('time'), L.t('user'), L.t('result'), L.t('similarity'), L.t('liveness'), L.t('quality'), L.t('reason'), L.t('latency')], rows.map(row => [
-    `<a href="/admin/verifications/${row.id}">${date(row.timestamp)}</a>`, esc(row.claimed_external_id||L.t('unknownUser')), badge(row.result), pct(row.similarity_score), pct(row.liveness_score), pct(row.quality_score), esc(humanCode(row.reason_code)), `${fmt(row.inference_time_ms)} ms`,
-  ]));
-}
-
-async function openAttempt(id) {
-  const attempt = await api(`/api/admin/verifications/${id}`);
-  showDirect('attempt-detail', `Attempt #${id}`);
-  const steps = parseJson(attempt.challenge_steps);
-  $('attempt-card').innerHTML = `<div class="detail-hero"><div><span class="section-label">VERIFICATION / #${attempt.id}</span><h2>${badge(attempt.result)} ${esc(attempt.claimed_external_id)}</h2><p>${date(attempt.timestamp)}</p></div></div>
-    <div class="profile-grid">${field(L.t('faceDetectedLabel'), attempt.face_detected ? humanCode('SUCCESS') : humanCode('FAILED'))}${field(L.t('quality'), pct(attempt.quality_score))}${field(L.t('liveness'), pct(attempt.liveness_score))}${field(L.t('similarity'), pct(attempt.similarity_score))}${field(L.t('threshold'), pct(attempt.threshold))}${field(L.t('latency'), `${fmt(attempt.inference_time_ms)} ms`)}${field(L.t('reason'), humanCode(attempt.reason_code))}${field(L.t('model'), attempt.model_name ? `${attempt.model_name}-${attempt.model_version}` : '—')}${field(L.t('challenge'), Array.isArray(steps) ? steps.map(step=>humanCode(step)).join(' → ') : L.t('legacyFlow'))}${field(L.t('challengeResult'), humanCode(attempt.challenge_result) || '—')}</div>
-    ${attempt.snapshot_id ? `<div class="data-card"><h2>${L.t('attemptSnapshot')}</h2><p class="warning">${L.t('snapshotWarning')}</p><img class="snapshot" src="/api/admin/verifications/${attempt.id}/snapshot"><button id="delete-snapshot">${L.t('deleteSnapshot')}</button></div>` : ''}<div class="data-card"><h2>${L.t('auditLog')}</h2><div id="attempt-audit"></div></div>`;
-  table('attempt-audit', [L.t('date'), L.t('event'), L.t('result')], attempt.audit_events.map(event => [date(event.timestamp), esc(humanCode(event.event_type)), badge(event.result)]));
-  if ($('delete-snapshot')) $('delete-snapshot').onclick = async () => { await api(`/api/admin/verifications/${id}/snapshot`, { method: 'DELETE' }); openAttempt(id); };
-}
-
-async function loadAudit() {
-  $('audit-list').innerHTML = `<div class="data-card">${L.t('loading')}</div>`;
-  const rows = await api(`/api/admin/audit?limit=${adminPageSize}&offset=${auditPage * adminPageSize}`);
-  table('audit-list', [L.t('date'), L.t('event'), L.t('user'), L.t('result'), L.t('details'), L.t('actions')], rows.map(event => [date(event.timestamp), esc(humanCode(event.event_type)), accountIdentityCell(event), badge(event.result), eventMetadataDetails(event)||'—', eventDetailsButton(event, 'audit')]));
-  renderAdminPager('audit-list', auditPage, rows.length, page => { auditPage = page; loadAudit(); });
-  bindEventDetailButtons();
-}
-
-async function loadSettings() { $('store-snapshots').checked = (await api('/api/admin/settings')).store_attempt_images; }
 function openEnrollment(id, hasBiometrics = selectedUserHasBiometrics) {
   selectedUser = id;
   selectedUserHasBiometrics = hasBiometrics;
@@ -399,33 +292,6 @@ function selectEnrollmentMode(mode) {
   if (!webcamSelected) stopAdminCamera();
 }
 
-function openDeleteBiometric(id, name) {
-  selectedUser = id;
-  selectedUserName = name;
-  $('delete-biometric-message').textContent = tr('confirmDeleteBiometric', { name });
-  $('delete-biometric-dialog').showModal();
-}
-
-async function confirmDeleteBiometric() {
-  if (deleteBiometricInFlight || !selectedUser) return;
-  deleteBiometricInFlight = true;
-  const button = $('confirm-delete-biometric');
-  button.disabled = true;
-  button.textContent = L.t('deleting');
-  try {
-    await api(`/api/admin/users/${encodeURIComponent(selectedUser)}/biometric`, { method: 'DELETE' });
-    $('delete-biometric-dialog').close();
-    toast('biometricDeleted');
-    await openUser(selectedUser);
-  } catch (error) {
-    toast(error.code || error.message);
-  } finally {
-    deleteBiometricInFlight = false;
-    button.disabled = false;
-    button.textContent = L.t('deleteBiometric');
-  }
-}
-
 async function sendPhotos(files) {
   const list = [...files];
   if (list.length < 3 || list.length > 5) return toast('INVALID_FRAME_COUNT');
@@ -434,14 +300,13 @@ async function sendPhotos(files) {
   const form = new FormData();
   list.forEach(file => form.append('photos', file, file.name));
   try {
-    const data = await api(`/api/admin/users/${encodeURIComponent(selectedUser)}/enrollment/photos`, { method: 'POST', body: form });
+    const data = await api(`/api/v3/admin/accounts/${selectedUser}/enrollment/photos`, { method: 'POST', body: form });
     $('photo-results').innerHTML = `<div class="upload-results">${data.results.map(result => `<div class="${result.accepted ? 'accepted' : 'rejected'}"><strong>${esc(result.filename)}</strong><span>${result.accepted ? `✓ ${L.t('photoAccepted')} · ${pct(result.quality_score)}` : L.t(result.reason_code)}</span></div>`).join('')}</div><p>${tr('validPhotos', { accepted: data.accepted_frames, required: data.required_frames })}</p>`;
     if (data.template_created) {
       stopAdminCamera();
       $('enroll-dialog').close();
       toast(selectedUserHasBiometrics ? 'biometricUpdated' : 'biometricEnrolled');
-      if (accountAuth && selectedV3UserId) await openV3User(selectedV3UserId, selectedV3Tab);
-      else await openUser(selectedUser);
+      if (selectedV3UserId) await openV3User(selectedV3UserId, selectedV3Tab);
     }
   } catch (error) {
     toast(error.code || error.message);
@@ -483,7 +348,7 @@ async function webcamEnroll() {
       const candidate = new File([blob], `webcam-${files.length + 1}.jpg`, { type: 'image/jpeg' });
       const form = new FormData();
       form.append('photo', candidate, candidate.name);
-      const result = await api(`/api/admin/users/${encodeURIComponent(selectedUser)}/enrollment/validate`, { method: 'POST', body: form });
+      const result = await api(`/api/v3/admin/accounts/${selectedUser}/enrollment/validate`, { method: 'POST', body: form });
       if (generation !== adminCameraGeneration || !adminStream || !$('enroll-dialog').open) return;
       if (!result.accepted) {
         previous = null;
@@ -626,7 +491,7 @@ $('create-user').onsubmit = async event => {
   submit.textContent = L.t('creating');
   try {
     const values = Object.fromEntries(new FormData(form));
-    if (accountAuth) {
+    {
       const permanent = values.password_mode === 'PERMANENT';
       const temporary = values.temporary_password;
       const password = permanent ? values.new_password : temporary;
@@ -651,9 +516,6 @@ $('create-user').onsubmit = async event => {
       syncCreatePasswordMode();
       toast('userCreated');
       await openV3User(Number(user.id), 'overview');
-    } else {
-      const user = await api('/api/admin/users', jsonOptions('POST', values));
-      location.href = `/admin/users/${encodeURIComponent(user.external_id)}`;
     }
   } catch (error) {
     form.elements.temporary_password.value = '';
@@ -665,15 +527,11 @@ $('create-user').onsubmit = async event => {
     submit.textContent = originalLabel;
   }
 };
-$('refresh-attempts').onclick = loadAttempts;
 $('apply-user-filters').onclick = () => { usersPage = 0; loadUsers(); };
 $('submit-photos').onclick = () => sendPhotos($('photo-files').files);
 $('start-webcam-enroll').onclick = webcamEnroll;
 $('tab-upload').onclick = () => selectEnrollmentMode('upload');
 $('tab-webcam').onclick = () => selectEnrollmentMode('webcam');
-$('cancel-delete-biometric').onclick = () => { if (!deleteBiometricInFlight) $('delete-biometric-dialog').close(); };
-$('confirm-delete-biometric').onclick = confirmDeleteBiometric;
-$('save-settings').onclick = async event => { const button=event.currentTarget; if(button.disabled)return; button.disabled=true; const label=button.textContent; button.textContent=L.t('saving'); try { await api('/api/admin/settings', jsonOptions('PUT', { store_attempt_images: $('store-snapshots').checked })); toast('settingsSaved'); } catch(error) { toast(error.code||error.message); } finally { button.disabled=false; button.textContent=label; } };
 $('admin-logout').onclick = async () => { await api('/api/v3/auth/logout', { method: 'POST' }); location.href = '/'; };
 $('enroll-dialog').addEventListener('close', stopAdminCamera);
 window.addEventListener('biogate:locale', () => {
@@ -684,19 +542,13 @@ window.addEventListener('biogate:locale', () => {
   const active = document.querySelector('.admin-view.active');
   if (active?.id === 'dashboard') loadDashboard();
   else if (active?.id === 'users') loadUsers();
-  else if (active?.id === 'attempts') loadAttempts();
-  else if (active?.id === 'audit') loadAudit();
   else if (active?.id === 'user-detail' && selectedV3UserId) openV3User(selectedV3UserId, selectedV3Tab);
-  else if (active?.id === 'user-detail' && selectedUser) openUser(selectedUser);
   else if (active?.id && window.loadBioGateV3Admin) {
     window.loadBioGateV3Admin(active.id).catch(error => toast(error.code || error.message));
   }
   if ($('enroll-dialog').open) $('enroll-title').textContent = L.t(selectedUserHasBiometrics ? 'updateBiometric' : 'addBiometric');
-  if ($('delete-biometric-dialog').open) $('delete-biometric-message').textContent = tr('confirmDeleteBiometric', { name: selectedUserName });
   if ($('event-detail-dialog').open && activeEventDetailKey) openEventDetails(activeEventDetailKey).catch(error => toast(error.code || error.message));
 });
-const userMatch = location.pathname.match(/^\/admin\/users\/([^/]+)$/);
-const attemptMatch = location.pathname.match(/^\/admin\/verifications\/(\d+)$/);
 
 async function bootAdmin() {
   L.init();
@@ -704,20 +556,15 @@ async function bootAdmin() {
   const accountResponse = await fetch('/api/v3/auth/me');
   if (!accountResponse.ok) { location.href = '/'; return; }
   const identity = await accountResponse.json();
-  accountAuth = true;
   if (identity.role !== 'ADMIN') { location.href = '/user'; return; }
   csrfToken = identity.csrf_token;
   currentAdminSessionId = identity.session_id;
   adminReady = true;
   $('admin-username').textContent = accountIdentity(identity);
-  if (userMatch) await openUser(decodeURIComponent(userMatch[1]));
-  else if (attemptMatch) await openAttempt(Number(attemptMatch[1]));
-  else {
-    const route = location.hash.slice(1) || 'dashboard';
-    const userRoute = route.match(/^users\/(\d+)(?:\/(\w+))?$/);
-    if (userRoute) await openV3User(Number(userRoute[1]), userRoute[2] || 'overview');
-    else show(route);
-  }
+  const route = location.hash.slice(1) || 'dashboard';
+  const userRoute = route.match(/^users\/(\d+)(?:\/(\w+))?$/);
+  if (userRoute) await openV3User(Number(userRoute[1]), userRoute[2] || 'overview');
+  else show(route);
 }
 
 window.addEventListener('load', localizePresentationOptions, { once: true });

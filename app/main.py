@@ -5,6 +5,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -14,10 +15,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import RequestResponseEndpoint
 
-from app.api.admin import router as admin_router
 from app.api.routes import router
 from app.api.v3 import V3_RUNTIME_SETTINGS
 from app.api.v3 import router as v3_router
+from app.api.v3_enrollment import router as v3_enrollment_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.db.database import Database
@@ -52,6 +53,7 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
         ):
             directory.mkdir(parents=True, exist_ok=True)
         app.state.repository = Repository(database)
+        cleanup_expired_attempt_snapshots(app.state.repository, config)
         for setting_name in V3_RUNTIME_SETTINGS:
             stored = app.state.repository.get_setting(f"v3_{setting_name}")
             if stored is not None:
@@ -92,8 +94,8 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
         ],
     )
     app.include_router(router)
-    app.include_router(admin_router)
     app.include_router(v3_router)
+    app.include_router(v3_enrollment_router)
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
     def openapi_schema() -> dict[str, object]:
@@ -228,10 +230,18 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
         # The separate environment-hash admin login was removed; admins sign in on "/".
         return RedirectResponse("/", status_code=308)
 
+    @app.get("/admin/users/{external_id}", include_in_schema=False)
+    async def legacy_admin_user(request: Request, external_id: str) -> Response:
+        # Old V2 bookmarks addressed people by External ID; the console uses account ids.
+        user = request.app.state.repository.get_user(external_id)
+        return RedirectResponse(f"/admin#users/{int(user['id'])}" if user else "/admin", status_code=308)
+
+    @app.get("/admin/verifications/{attempt_id}", include_in_schema=False)
+    async def legacy_admin_attempt(attempt_id: int) -> Response:
+        return RedirectResponse("/admin#access", status_code=308)
+
     @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
-    @app.get("/admin/users/{external_id}", response_class=HTMLResponse, include_in_schema=False)
-    @app.get("/admin/verifications/{attempt_id}", response_class=HTMLResponse, include_in_schema=False)
-    async def admin(request: Request, external_id: str | None = None, attempt_id: int | None = None) -> Response:
+    async def admin(request: Request) -> Response:
         account_session = request.app.state.account_auth_service.get_session(request.cookies.get(ACCOUNT_COOKIE_NAME))
         if account_session:
             if account_session.must_change_password:
@@ -242,6 +252,23 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
         return RedirectResponse("/", status_code=303)
 
     return app
+
+
+def cleanup_expired_attempt_snapshots(repository: Repository, settings: Settings) -> int:
+    """Delete legacy V2 attempt snapshots past their retention date.
+
+    Nothing writes new snapshots since the V2 verification API was removed, and the
+    manual cleanup button went with it, so expired ones are removed at startup.
+    """
+    deleted = 0
+    root = settings.attempt_image_dir.resolve()
+    for snapshot in repository.expired_snapshots(datetime.now(UTC).isoformat()):
+        path = (root / str(snapshot["file_name"])).resolve()
+        if path.parent == root:
+            path.unlink(missing_ok=True)
+        repository.delete_snapshot(int(snapshot["attempt_id"]))
+        deleted += 1
+    return deleted
 
 
 def _openapi_tag(path: str) -> str:
