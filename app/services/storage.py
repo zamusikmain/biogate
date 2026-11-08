@@ -11,12 +11,12 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import Settings
-from app.db.database import Database
+from app.db.database import SCHEMA_VERSION, Database
 from app.services.repository import Repository
 
 ALLOWED_EVIDENCE_MIME = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 BACKUP_FORMAT_VERSION = 1
-BACKUP_SCHEMA_VERSION = 3
+BACKUP_SCHEMA_VERSION = SCHEMA_VERSION
 
 
 class EvidenceStorage:

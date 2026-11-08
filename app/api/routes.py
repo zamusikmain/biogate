@@ -5,42 +5,14 @@ from fastapi import (
     APIRouter,
     HTTPException,
     Request,
-    UploadFile,
 )
 
-from app.core.config import Settings
 from app.schemas.api import (
     HealthResponse,
 )
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp"}
-
-
-async def read_images(files: list[UploadFile], settings: Settings) -> list[bytes]:
-    payloads: list[bytes] = []
-    for upload in files:
-        if upload.content_type not in ALLOWED_MIME:
-            raise HTTPException(
-                415,
-                detail={
-                    "reason_code": "UNSUPPORTED_MEDIA_TYPE",
-                    "message": "JPEG, PNG or WebP required",
-                },
-            )
-        data = await upload.read(settings.max_image_size + 1)
-        await upload.close()
-        if not data or len(data) > settings.max_image_size:
-            raise HTTPException(
-                413,
-                detail={
-                    "reason_code": "IMAGE_TOO_LARGE",
-                    "message": "Image is empty or exceeds size limit",
-                },
-            )
-        payloads.append(data)
-    return payloads
 
 
 @router.get("/health", response_model=HealthResponse)

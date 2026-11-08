@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.main import asset
 from tests.test_v3 import v3_admin_login
 
 ROOT = Path(__file__).parents[1]
@@ -32,8 +33,12 @@ def test_login_loads_guidance_before_controller_and_is_not_cached(client: TestCl
     assert response.status_code == 200
     assert "no-store" in response.headers["cache-control"]
     text = response.text
-    assert text.index("face-guidance-locales.js?v=5") < text.index("face-guidance.js?v=5")
-    assert text.index("face-guidance.js?v=5") < text.index("login-v3.js?v=5")
+    assert text.index(asset("face-guidance-locales.js")) < text.index(asset("face-guidance.js"))
+    assert text.index(asset("face-guidance.js")) < text.index(asset("login-v3.js"))
+    script = client.get(asset("login-v3.js"))
+    assert script.status_code == 200
+    assert "immutable" in script.headers["cache-control"]
+    assert "no-cache" == client.get("/static/login-v3.js").headers["cache-control"]
     for obsolete in ('id="camera-action"', 'id="camera-progress"', 'id="face-result"'):
         assert obsolete not in text
     assert client.get("/__qa/report").status_code == 404

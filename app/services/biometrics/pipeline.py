@@ -1,3 +1,5 @@
+import threading
+
 import cv2
 import numpy as np
 from numpy.typing import NDArray
@@ -14,6 +16,10 @@ from app.services.biometrics.quality import EnrollmentPoseGate, QualityService
 
 
 class BiometricPipeline:
+    # The OpenCV and MediaPipe models keep per-call state (YuNet input size, graph buffers), so
+    # requests served from the thread pool run one inference at a time.
+    _inference_lock = threading.Lock()
+
     def __init__(self, settings: Settings):
         store = ModelStore(settings.model_cache)
         self.detector = FaceDetector(store.ensure(YUNET))
@@ -48,6 +54,10 @@ class BiometricPipeline:
 
     def _process(self, data: bytes, *, enrollment: bool) -> FrameResult:
         image = self.decode(data)
+        with self._inference_lock:
+            return self._process_image(image, enrollment=enrollment)
+
+    def _process_image(self, image: NDArray[np.uint8], *, enrollment: bool) -> FrameResult:
         observation = self.detector.detect_one(image)
         quality = self.quality.evaluate(image, observation)
         if not quality.accepted:
@@ -71,12 +81,15 @@ class BiometricPipeline:
 
     def _analyze_frame(self, data: bytes, *, include_embedding: bool, analyze_eyes: bool = True) -> FrameAnalysis:
         image = self.decode(data)
-        observation = self.detector.detect_one(image)
-        quality = self.quality.evaluate(image, observation)
-        if not quality.accepted:
-            raise BiometricError(quality.reason_code, "Image quality check failed")
-        embedding = self.embedder.extract(image, observation) if include_embedding else np.empty(0, dtype=np.float32)
-        ratios = self.eye_geometry.eye_aspect_ratios(image) if analyze_eyes else None
+        with self._inference_lock:
+            observation = self.detector.detect_one(image)
+            quality = self.quality.evaluate(image, observation)
+            if not quality.accepted:
+                raise BiometricError(quality.reason_code, "Image quality check failed")
+            embedding = (
+                self.embedder.extract(image, observation) if include_embedding else np.empty(0, dtype=np.float32)
+            )
+            ratios = self.eye_geometry.eye_aspect_ratios(image) if analyze_eyes else None
         left_ear, right_ear = ratios if ratios else (None, None)
         ear = float((left_ear + right_ear) / 2.0) if left_ear is not None and right_ear is not None else None
         return FrameAnalysis(

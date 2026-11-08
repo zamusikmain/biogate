@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import sqlite3
@@ -6,6 +7,8 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from functools import lru_cache
+from importlib import metadata
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -33,8 +36,22 @@ from app.services.repository import Repository
 from app.services.storage import BackupService, EvidenceStorage
 
 BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 request_logger = logging.getLogger("biogate.request")
+
+
+@lru_cache
+def _asset_version(name: str) -> str:
+    return hashlib.sha256((STATIC_DIR / name).read_bytes()).hexdigest()[:12]
+
+
+def asset(name: str) -> str:
+    """URL of a static file with a content hash, so browsers may cache it until the file changes."""
+    return f"/static/{name}?v={_asset_version(name)}"
+
+
+templates.env.globals["asset"] = asset
 
 
 def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | None = None) -> FastAPI:
@@ -56,8 +73,16 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
         app.state.repository = Repository(database)
         for setting_name in V3_RUNTIME_SETTINGS:
             stored = app.state.repository.get_setting(f"v3_{setting_name}")
-            if stored is not None:
+            if stored is None:
+                continue
+            try:
                 setattr(config, setting_name, json.loads(stored))
+            except ValueError:  # bad JSON or out of range: keep the .env value and say so
+                logging.getLogger("biogate.settings").warning(
+                    "Ignoring invalid stored setting %s",
+                    setting_name,
+                    extra={"operation": "settings", "reason_code": "INVALID_STORED_SETTING"},
+                )
         admin_hash = config.admin_password_hash.get_secret_value()
         if config.admin_username and admin_hash:
             app.state.repository.ensure_bootstrap_admin(config.admin_username, admin_hash)
@@ -90,7 +115,7 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
 
     app = FastAPI(
         title="BioGate API",
-        version="0.3.0",
+        version=metadata.version("biogate"),  # single source: pyproject.toml
         description="Local-first BioGate V3 identity and access management API.",
         lifespan=lifespan,
         openapi_tags=[
@@ -108,21 +133,17 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
     app.include_router(router)
     app.include_router(v3_router)
     app.include_router(v3_enrollment_router)
-    app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     def openapi_schema() -> dict[str, object]:
         if app.openapi_schema:
             return app.openapi_schema
-        documented_routes = [
-            route
-            for route in app.routes
-            if str(getattr(route, "path", "")).startswith("/api/v3/") or str(getattr(route, "path", "")) == "/health"
-        ]
+        # FastAPI wraps included routers, so pass every route and drop undocumented paths below.
         schema = get_openapi(
             title=app.title,
             version=app.version,
             description=app.description,
-            routes=documented_routes,
+            routes=app.routes,
         )
         paths = schema.get("paths", {})
         components = schema.setdefault("components", {})
@@ -209,7 +230,13 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
             "script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; "
             "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
         )
-        if request.url.path == "/" or request.url.path.startswith(("/api/v3", "/admin", "/user", "/static")):
+        if request.url.path.startswith("/static/"):
+            # Pages reference assets with a content hash (asset()), so a versioned URL never changes.
+            versioned = "v" in request.query_params and response.status_code == 200
+            response.headers.setdefault(
+                "Cache-Control", "public, max-age=31536000, immutable" if versioned else "no-cache"
+            )
+        elif request.url.path == "/" or request.url.path.startswith(("/api/v3", "/admin", "/user")):
             response.headers.setdefault("Cache-Control", "private, no-store, max-age=0")
         return response
 
@@ -222,14 +249,14 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
         )
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
-    async def index(request: Request) -> Response:
+    def index(request: Request) -> Response:
         session = request.app.state.account_auth_service.get_session(request.cookies.get(ACCOUNT_COOKIE_NAME))
         if session and not session.must_change_password:
             return RedirectResponse("/admin" if session.role == "ADMIN" else "/user", status_code=303)
         return templates.TemplateResponse(request=request, name="login.html")
 
     @app.get("/user", response_class=HTMLResponse, include_in_schema=False)
-    async def user_app(request: Request) -> Response:
+    def user_app(request: Request) -> Response:
         session = request.app.state.account_auth_service.get_session(request.cookies.get(ACCOUNT_COOKIE_NAME))
         if not session or session.must_change_password:
             return RedirectResponse("/", status_code=303)
@@ -243,7 +270,7 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
         return RedirectResponse("/", status_code=308)
 
     @app.get("/admin/users/{external_id}", include_in_schema=False)
-    async def legacy_admin_user(request: Request, external_id: str) -> Response:
+    def legacy_admin_user(request: Request, external_id: str) -> Response:
         # Old V2 bookmarks addressed people by External ID; the console uses account ids.
         user = request.app.state.repository.get_user(external_id)
         return RedirectResponse(f"/admin#users/{int(user['id'])}" if user else "/admin", status_code=308)
@@ -253,7 +280,7 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
         return RedirectResponse("/admin#access", status_code=308)
 
     @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
-    async def admin(request: Request) -> Response:
+    def admin(request: Request) -> Response:
         account_session = request.app.state.account_auth_service.get_session(request.cookies.get(ACCOUNT_COOKIE_NAME))
         if account_session:
             if account_session.must_change_password:
