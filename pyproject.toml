@@ -12,9 +12,9 @@ dependencies = [
   "fastapi==0.162.2",
   # Pinned directly: fastapi accepts any starlette>=0.46, including versions with known advisories.
   "starlette==1.10.0",
-  "uvicorn[standard]==0.34.2",
-  "pydantic==2.11.4",
-  "pydantic-settings==2.9.1",
+  "uvicorn[standard]==0.54.0",
+  "pydantic==2.14.3",
+  "pydantic-settings==2.16.2",
   "python-multipart==0.0.33",
   "jinja2==3.1.6",
   "numpy==2.2.5",
@@ -25,7 +25,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "httpx==0.28.1",
+  # starlette's TestClient uses httpx2; plain httpx is deprecated there.
+  "httpx2==2.16.0",
   "pytest==9.2.0",
   "pytest-cov==7.1.0",
   "ruff==0.11.10",
