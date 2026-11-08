@@ -541,6 +541,14 @@ def test_security_headers_and_sensitive_cache_policy(client: TestClient) -> None
         assert response.headers["x-frame-options"] == "DENY"
         assert response.headers["referrer-policy"] == "no-referrer"
         assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+        assert "'unsafe-inline'" not in response.headers["content-security-policy"]
+
+    # style-src has no 'unsafe-inline': markup and scripts must not rely on inline styles.
+    root = Path(__file__).parents[1] / "app"
+    for source in [*root.glob("templates/*.html"), *root.glob("static/*.js")]:
+        text = source.read_text(encoding="utf-8")
+        for pattern in ("style=", "<style", "setAttribute('style'", 'setAttribute("style"', "cssText"):
+            assert pattern not in text, f"{source.name} uses {pattern}"
 
     protected = client.get("/api/v3/admin/accounts")
     assert protected.status_code == 401

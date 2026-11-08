@@ -224,7 +224,7 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
-            "script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; "
+            "script-src 'self'; style-src 'self'; connect-src 'self'; "
             "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
         )
         if request.url.path.startswith("/static/"):
