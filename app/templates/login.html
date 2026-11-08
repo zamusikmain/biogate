@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>BioGate V3</title>
-  <link rel="stylesheet" href="/static/v3.css">
-  <link rel="stylesheet" href="/static/face-guidance.css?v=4">
+  <link rel="stylesheet" href="{{ asset('v3.css') }}">
+  <link rel="stylesheet" href="{{ asset('face-guidance.css') }}">
 </head>
 <body class="v3-login">
   <main class="v3-login-shell">
@@ -69,7 +69,7 @@
       </section>
     </section>
   </main>
-  <script src="/static/v3-locales.js?v=7"></script><script src="/static/face-guidance-locales.js?v=5"></script><script src="/static/face-guidance.js?v=5"></script>
-  <script src="/static/login-v3.js?v=5" defer></script>
+  <script src="{{ asset('v3-locales.js') }}"></script><script src="{{ asset('face-guidance-locales.js') }}"></script><script src="{{ asset('face-guidance.js') }}"></script>
+  <script src="{{ asset('login-v3.js') }}" defer></script>
 </body>
 </html>

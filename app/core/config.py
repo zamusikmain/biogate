@@ -6,7 +6,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="BIOGATE_", env_file=".env", extra="ignore")
+    # validate_assignment: runtime overrides stored in the database go through the same limits as .env.
+    model_config = SettingsConfigDict(env_prefix="BIOGATE_", env_file=".env", extra="ignore", validate_assignment=True)
 
     db_path: Path = Path("data/biogate.db")
     model_cache: Path = Path("model_cache")

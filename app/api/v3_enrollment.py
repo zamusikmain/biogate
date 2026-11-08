@@ -29,19 +29,23 @@ ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp"}
 router = APIRouter(prefix="/api/v3/admin/accounts", tags=["BioGate V3"])
 
 
-async def read_enrollment_photo(photo: UploadFile, settings: Settings) -> bytes:
-    """Read one enrollment image into memory and always close the upload."""
+def read_enrollment_photo(photo: UploadFile, settings: Settings) -> bytes:
+    """Read one enrollment image into memory and always close the upload.
+
+    Synchronous on purpose: callers are plain ``def`` endpoints that FastAPI runs in its
+    thread pool, so image analysis never blocks the event loop.
+    """
     try:
         if photo.content_type not in ALLOWED_MIME:
             raise BiometricError("UNSUPPORTED_MEDIA_TYPE", "JPEG, PNG or WebP required")
-        payload = await photo.read(settings.max_image_size + 1)
+        payload = photo.file.read(settings.max_image_size + 1)
         if not payload:
             raise BiometricError("INVALID_IMAGE", "Image is empty")
         if len(payload) > settings.max_image_size:
             raise BiometricError("IMAGE_TOO_LARGE", "Image exceeds size limit")
         return payload
     finally:
-        await photo.close()
+        photo.file.close()
 
 
 def _account(repository: Repository, user_id: int) -> dict[str, Any]:
@@ -52,7 +56,7 @@ def _account(repository: Repository, user_id: int) -> dict[str, Any]:
 
 
 @router.post("/{user_id}/enrollment/validate", response_model=EnrollmentFrameValidationResponse)
-async def validate_enrollment_frame(
+def validate_enrollment_frame(
     user_id: int,
     photo: Annotated[UploadFile, File()],
     _: Annotated[AccountSession, Depends(require_account_admin)],
@@ -62,7 +66,7 @@ async def validate_enrollment_frame(
 ) -> EnrollmentFrameValidationResponse:
     _account(repository, user_id)
     try:
-        payload = await read_enrollment_photo(photo, settings)
+        payload = read_enrollment_photo(photo, settings)
         frame = pipeline.process_enrollment_frame(payload)
     except BiometricError as error:
         return EnrollmentFrameValidationResponse(accepted=False, reason_code=error.reason_code)
@@ -79,7 +83,7 @@ async def validate_enrollment_frame(
 
 
 @router.post("/{user_id}/enrollment/photos", response_model=PhotoEnrollmentResponse)
-async def photo_enrollment(
+def photo_enrollment(
     user_id: int,
     photos: Annotated[list[UploadFile], File()],
     _: Annotated[AccountSession, Depends(require_account_admin)],
@@ -96,7 +100,7 @@ async def photo_enrollment(
     for index, photo in enumerate(photos, 1):
         filename = photo.filename or f"photo-{index}"
         try:
-            payload = await read_enrollment_photo(photo, settings)
+            payload = read_enrollment_photo(photo, settings)
             frame = pipeline.process_enrollment_frame(payload)
             embeddings.append(frame.embedding)
             results.append(

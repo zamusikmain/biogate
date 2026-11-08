@@ -53,10 +53,30 @@ if (-not (Test-Path $stamp) -or (Get-Content $stamp -Raw).Trim() -ne $expected) 
 & $venvPython scripts\bootstrap_env.py
 if ($LASTEXITCODE -ne 0) { throw ".env setup failed" }
 
+# Fail early instead of letting uvicorn crash or the browser open whatever already owns the port.
+$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
+try {
+    $listener.Start()
+} catch {
+    throw "Port $Port is already in use (another BioGate window?). Close it or start with -Port <number>."
+} finally {
+    $listener.Stop()
+}
+
 $url = "http://127.0.0.1:$Port/"
 Write-Host "BioGate: $url (admin console: ${url}admin). Press CTRL+C to stop."
 if ($OpenBrowser) {
-    Start-Job -ScriptBlock { param($u) Start-Sleep -Seconds 5; Start-Process $u } -ArgumentList $url | Out-Null
+    # Open the browser once BioGate itself reports healthy. The job belongs to this PowerShell
+    # process, so it ends together with the server instead of polling after a crash.
+    Start-Job -ScriptBlock {
+        param($health, $page)
+        for ($i = 0; $i -lt 300; $i++) {
+            try {
+                if ((Invoke-RestMethod $health -TimeoutSec 2).status -eq "ok") { Start-Process $page; return }
+            } catch {}
+            Start-Sleep -Seconds 1
+        }
+    } -ArgumentList "${url}health/live", $url | Out-Null
 }
 $serverArgs = @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "$Port")
 if ($BehindProxy) {

@@ -828,11 +828,15 @@ class Repository:
         result: str | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
+        after_id: int | None = None,
     ) -> list[dict[str, Any]]:
         sql = """SELECT ae.*,u.external_id,u.employee_id,u.login,u.full_name,u.role,p.id AS photo_id
                  FROM access_events ae LEFT JOIN users u ON u.id=ae.user_id
                  LEFT JOIN evidence_photos p ON p.access_event_id=ae.id WHERE 1=1"""
         params: list[Any] = []
+        if after_id is not None:
+            sql += " AND ae.id>?"
+            params.append(after_id)
         if user_id is not None:
             sql += " AND ae.user_id=?"
             params.append(user_id)

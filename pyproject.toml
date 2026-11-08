@@ -9,11 +9,13 @@ description = "Local biometric identity and access management system"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-  "fastapi==0.115.12",
+  "fastapi==0.162.2",
+  # Pinned directly: fastapi accepts any starlette>=0.46, including versions with known advisories.
+  "starlette==1.10.0",
   "uvicorn[standard]==0.34.2",
   "pydantic==2.11.4",
   "pydantic-settings==2.9.1",
-  "python-multipart==0.0.20",
+  "python-multipart==0.0.33",
   "jinja2==3.1.6",
   "numpy==2.2.5",
   "opencv-contrib-python==4.10.0.84",
@@ -24,8 +26,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "httpx==0.28.1",
-  "pytest==8.3.5",
-  "pytest-cov==6.1.1",
+  "pytest==9.2.0",
+  "pytest-cov==7.1.0",
   "ruff==0.11.10",
   "mypy==1.15.0",
 ]
@@ -38,7 +40,7 @@ exclude = ["DEV_CREDENTIALS.local.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --disable-warnings --maxfail=1"
+addopts = "-q --maxfail=1"
 
 [tool.ruff]
 target-version = "py311"

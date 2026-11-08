@@ -10,6 +10,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.api.dependencies import (
     get_account_auth_service,
@@ -131,7 +132,10 @@ async def password_login(
         raise HTTPException(401, detail={"reason_code": "INVALID_CREDENTIALS"})
     address, agent = _client(request)
     try:
-        session, cookie = auth.password_login(login, password, client_address=address, user_agent=agent)
+        # Argon2 verification is deliberately slow; keep it off the event loop.
+        session, cookie = await run_in_threadpool(
+            auth.password_login, login, password, client_address=address, user_agent=agent
+        )
     except AccountAuthError as error:
         status = (
             429
@@ -244,7 +248,7 @@ def create_recovery_challenge(
 
 
 @router.post("/face/challenges/{challenge_id}/frames")
-async def analyze_face_challenge(
+def analyze_face_challenge(
     challenge_id: str,
     request: Request,
     response: Response,
@@ -260,7 +264,10 @@ async def analyze_face_challenge(
     content_type = (frame.content_type or "").lower()
     if content_type not in {"image/jpeg", "image/png", "image/webp"}:
         raise HTTPException(415, detail={"reason_code": "UNSUPPORTED_MEDIA_TYPE"})
-    data = await frame.read(settings.max_image_size + 1)
+    try:
+        data = frame.file.read(settings.max_image_size + 1)
+    finally:
+        frame.file.close()
     if len(data) > settings.max_image_size:
         raise HTTPException(413, detail={"reason_code": "IMAGE_TOO_LARGE"})
     try:
@@ -413,7 +420,7 @@ def read_notification(
 
 
 @router.post("/user/biometric-frame")
-async def validate_own_biometric_frame(
+def validate_own_biometric_frame(
     photo: Annotated[UploadFile, File()],
     _: Annotated[AccountSession, Depends(require_full_account_session)],
     pipeline: Annotated[BiometricPipeline, Depends(get_pipeline)],
@@ -421,7 +428,7 @@ async def validate_own_biometric_frame(
 ) -> dict[str, Any]:
     """Ephemeral capture feedback; never stores or approves a biometric template."""
     try:
-        data = await read_enrollment_photo(photo, settings)
+        data = read_enrollment_photo(photo, settings)
         frame = pipeline.process_enrollment_frame(data)
     except BiometricError as error:
         return {"accepted": False, "reason_code": error.reason_code}
@@ -434,7 +441,7 @@ async def validate_own_biometric_frame(
 
 
 @router.post("/user/biometric-requests")
-async def submit_biometric_request(
+def submit_biometric_request(
     photos: Annotated[list[UploadFile], File()],
     session: Annotated[AccountSession, Depends(require_full_account_session)],
     workflow: Annotated[BiometricWorkflowService, Depends(get_biometric_workflow)],
@@ -448,7 +455,7 @@ async def submit_biometric_request(
     source_data: list[tuple[bytes, str]] = []
     for photo in photos:
         try:
-            data = await read_enrollment_photo(photo, settings)
+            data = read_enrollment_photo(photo, settings)
             frames.append(pipeline.process_enrollment_frame(data))
             source_data.append((data, photo.content_type or "image/jpeg"))
         except BiometricError as error:
@@ -1252,15 +1259,16 @@ def add_admin_note(
 
 @router.get("/admin/live")
 async def live_monitor(
+    request: Request,
     _: Annotated[AccountSession, Depends(require_account_admin)],
     repository: Annotated[Repository, Depends(get_repository)],
 ) -> StreamingResponse:
     async def stream() -> Any:
         last_id = 0
-        while True:
-            events = repository.access_events(limit=50)
-            fresh = [event for event in reversed(events) if int(event["id"]) > last_id]
-            for event in fresh:
+        while not await request.is_disconnected():
+            # SQLite is synchronous; query it in the thread pool so the event loop stays free.
+            events = await run_in_threadpool(repository.access_events, limit=50, after_id=last_id)
+            for event in reversed(events):
                 last_id = max(last_id, int(event["id"]))
                 yield f"event: access\ndata: {json.dumps(event, default=str)}\n\n"
             await asyncio.sleep(2)
