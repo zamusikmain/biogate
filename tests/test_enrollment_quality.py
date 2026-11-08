@@ -44,8 +44,56 @@ def test_pose_limits_come_from_configuration() -> None:
         Settings(_env_file=None, enrollment_max_yaw=0.0)
 
 
-def _pipeline(observation: FaceObservation, quality: QualityResult) -> BiometricPipeline:
+def test_pose_gate_prefers_landmark_roll_over_yunet() -> None:
+    gate = EnrollmentPoseGate(max_yaw=0.35, max_roll_degrees=20.0)
+    # YuNet reads a tilted head as nearly level; the MediaPipe roll decides.
+    assert gate.evaluate(face(), roll_degrees=24.0) == "HEAD_TILTED"
+    assert gate.evaluate(face(), roll_degrees=-24.0) == "HEAD_TILTED"
+    assert gate.evaluate(face(right_eye=(80, 70)), roll_degrees=5.0) is None
+    # Without landmarks the YuNet estimate is the fallback.
+    assert gate.evaluate(face(right_eye=(80, 70)), roll_degrees=None) == "HEAD_TILTED"
+    assert gate.evaluate(face(yaw=0.5), roll_degrees=0.0) == "HEAD_TURNED"
+
+
+def test_landmark_roll_uses_outer_eye_corners_in_pixels() -> None:
+    from types import SimpleNamespace
+
+    from app.services.biometrics.landmarks import OUTER_EYE_CORNERS, EyeGeometryService
+
+    def service(first: tuple[float, float], second: tuple[float, float] | None) -> EyeGeometryService:
+        points = [SimpleNamespace(x=0.5, y=0.5) for _ in range(478)]
+        points[OUTER_EYE_CORNERS[0]] = SimpleNamespace(x=first[0], y=first[1])
+        if second:
+            points[OUTER_EYE_CORNERS[1]] = SimpleNamespace(x=second[0], y=second[1])
+        result = SimpleNamespace(face_landmarks=[points] if second else [])
+        instance = object.__new__(EyeGeometryService)
+        instance.landmarker = SimpleNamespace(detect=lambda _: result)
+        return instance
+
+    square = np.zeros((200, 200, 3), dtype=np.uint8)
+    assert service((0.3, 0.5), (0.7, 0.5)).roll_degrees(square) == pytest.approx(0.0)
+    assert service((0.3, 0.5), (0.7, 0.7)).roll_degrees(square) == pytest.approx(26.565, abs=0.01)
+    assert service((0.7, 0.5), (0.3, 0.5)).roll_degrees(square) == pytest.approx(0.0)
+    # Normalized coordinates are scaled per axis: 0.2 of 100 px high over 0.4 of 400 px wide is about 7 degrees.
+    wide = np.zeros((100, 400, 3), dtype=np.uint8)
+    assert service((0.3, 0.5), (0.7, 0.7)).roll_degrees(wide) == pytest.approx(7.125, abs=0.01)
+    assert service((0.3, 0.5), None).roll_degrees(square) is None
+
+
+def test_enrollment_rejects_tilt_that_yunet_misses() -> None:
+    good = QualityResult(True, 0.9, 100.0, 128.0, "OK")
+    tilted = _pipeline(face(), good, roll=25.0)
+    with pytest.raises(BiometricError) as error:
+        tilted.process_enrollment_frame(b"frame")
+    assert error.value.reason_code == "HEAD_TILTED"
+    # Verification frames are not pose-gated.
+    assert tilted.process_frame(b"frame").embedding.size == 2
+    assert _pipeline(face(), good, roll=12.0).process_enrollment_frame(b"frame").quality.accepted is True
+
+
+def _pipeline(observation: FaceObservation, quality: QualityResult, roll: float | None = 0.0) -> BiometricPipeline:
     pipeline = object.__new__(BiometricPipeline)
+    pipeline.eye_geometry = type("Eyes", (), {"roll_degrees": lambda self, _: roll})()
     pipeline.decode = lambda _: np.zeros((120, 160, 3), dtype=np.uint8)  # type: ignore[method-assign]
     pipeline.detector = type("Detector", (), {"detect_one": lambda self, _: observation})()
     pipeline.quality = type("Quality", (), {"evaluate": lambda self, _, __: quality})()

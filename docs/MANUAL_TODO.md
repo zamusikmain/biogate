@@ -20,12 +20,15 @@ Items Claude could not finish alone in the `polish-2` round.
    - **Yaw works as intended.** All 251 of 11,562 detected faces above 0.35 were refused as `HEAD_TURNED`
      (2.2 % of mostly frontal news photos; 95th percentile |yaw| = 0.28). Mirroring an image flipped the
      sign of the yaw proxy in 300 of 300 cases.
-   - **Roll does not.** 200 level, upright faces were rotated in-plane by ±5…30°. YuNet's eye landmarks stay
-     close to horizontal on tilted faces: at a true 20° tilt the measured roll was typically 3–5°, so
-     `HEAD_TILTED` almost never fired below 25° (at ±22°: 1 of 200 refused for tilt). Across 150 faces the
-     YuNet roll error was 8–20° (median), while MediaPipe Face Landmarker eye corners on the same images were
-     within 1° (95th percentile). Tilt also leaks into the YuNet yaw proxy (about +0.15 at 30°).
-   - Suggested fix: measure roll from the MediaPipe landmarks the pipeline already loads. Not applied.
+   - **Roll was broken and is fixed.** YuNet's eye landmarks stay close to horizontal on tilted faces: at a
+     true 20° tilt they read 3–5°, so `HEAD_TILTED` almost never fired below 25° (at ±22°: 1 of 200 refused).
+     Across 150 rotated faces the YuNet roll error was 8–20° (median); MediaPipe Face Landmarker outer eye
+     corners on the same images were within 1° (95th percentile). Enrollment now measures roll from MediaPipe
+     (YuNet only as a fallback when MediaPipe finds no face). After the fix the gate matched the true total
+     tilt in 1,374 of 1,375 rotated copies (cases within 1.5° of the limit skipped), and it refuses 0.44 % of
+     plain LFW photos for tilt (90th percentile tilt 11°). Tilt still leaks into the YuNet yaw proxy
+     (about +0.15 at 30°), which only makes `HEAD_TURNED` slightly stricter for strongly tilted heads.
+   - Still worth a real-camera check: these were rotated news photos, not a person tilting in front of a webcam.
 5. **ArcFace licence decision.** The compared ArcFace R100 weights are treated as non-commercial. If a
    permissively licensed ArcFace-class model is found, re-run the comparison before switching models.
 6. From earlier rounds: live-face checks with a real camera and a face-login GIF (`docs/img/face-login.gif`).
