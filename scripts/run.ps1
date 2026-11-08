@@ -53,27 +53,29 @@ if (-not (Test-Path $stamp) -or (Get-Content $stamp -Raw).Trim() -ne $expected) 
 & $venvPython scripts\bootstrap_env.py
 if ($LASTEXITCODE -ne 0) { throw ".env setup failed" }
 
-# Fail early instead of letting uvicorn crash or the browser open whatever already owns the port.
-$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
-try {
-    $listener.Start()
-} catch {
-    throw "Port $Port is already in use (another BioGate window?). Close it or start with -Port <number>."
-} finally {
-    $listener.Stop()
-}
-# Browsers try "localhost" over IPv6 first. If another program (Docker, for example) holds the
-# port there, localhost:$Port opens that program instead of BioGate, so say so up front.
-$listener6 = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::IPv6Loopback, $Port)
-try {
-    $listener6.Start()
-} catch [System.Net.Sockets.SocketException] {
-    if ($_.Exception.SocketErrorCode -eq [System.Net.Sockets.SocketError]::AddressAlreadyInUse) {
-        Write-Warning ("Another program listens on port $Port over IPv6, so http://localhost:$Port/ opens " +
-            "that program. Use http://127.0.0.1:$Port/ or start BioGate with -Port <number>.")
+# A port is busy if anything listens on it, on any address. A program on "::" or "0.0.0.0"
+# (Docker Desktop, for example) also receives connections meant for 127.0.0.1 whenever BioGate
+# is not answering, so the browser can end up on that program instead of BioGate.
+function Get-PortOwner([int]$Number) {
+    $owner = Get-NetTCPConnection -LocalPort $Number -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($owner) {
+        $name = (Get-Process -Id $owner.OwningProcess -ErrorAction SilentlyContinue).ProcessName
+        return $(if ($name) { $name } else { "PID $($owner.OwningProcess)" })
     }
-} finally {
-    $listener6.Stop()
+    $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Number)
+    try { $probe.Start(); return $null } catch { return "another program" } finally { $probe.Stop() }
+}
+
+$owner = Get-PortOwner $Port
+if ($owner) {
+    # A port given on the command line, or one the HTTPS proxy points at, must not move silently.
+    if ($PSBoundParameters.ContainsKey("Port") -or $BehindProxy) {
+        throw "Port $Port is already in use by $owner. Free it or start with -Port <number>."
+    }
+    $free = ($Port + 1)..($Port + 20) | Where-Object { -not (Get-PortOwner $_) } | Select-Object -First 1
+    if (-not $free) { throw "Ports $Port-$($Port + 20) are all in use. Start with -Port <number>." }
+    Write-Warning "Port $Port is taken by $owner; BioGate uses port $free instead."
+    $Port = $free
 }
 
 $url = "http://127.0.0.1:$Port/"
