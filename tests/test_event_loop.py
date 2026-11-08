@@ -58,6 +58,39 @@ def test_admin_search_finds_cyrillic_names_in_any_case(client: TestClient) -> No
     assert client.get("/api/v3/admin/accounts", params={"search": "петров"}).json() == []
 
 
+def test_face_login_photos_reach_the_card_and_only_their_owner(client: TestClient) -> None:
+    import cv2
+
+    from app.services.account_auth import ACCOUNT_COOKIE_NAME
+
+    state = client.app.state  # type: ignore[attr-defined]
+    jpeg = cv2.imencode(".jpg", np.full((40, 40, 3), 128, dtype=np.uint8))[1].tobytes()
+
+    def face_login(user_id: int) -> str:
+        event_id = state.repository.add_access_event(
+            {"user_id": user_id, "method": "FACE", "result": "SUCCESS", "reason": "IDENTIFIED"}
+        )
+        return str(
+            state.evidence_storage.save(
+                jpeg, "image/jpeg", "FACE_IDENTIFIED", user_id=user_id, access_event_id=event_id
+            )["id"]
+        )
+
+    anna, bob = create_account(client, "anna.photo"), create_account(client, "bob.photo")
+    anna_photo, bob_photo = face_login(anna), face_login(bob)
+    # The admin card's access tab gets the photo id it renders as a thumbnail.
+    assert client.get(f"/api/v3/admin/accounts/{anna}/access-events").json()[0]["photo_id"] == anna_photo
+
+    state.repository.set_force_password_change(anna, False)
+    _, cookie = state.account_auth_service.create_session(state.repository.get_user_by_id(anna), "PASSWORD")
+    client.cookies.clear()
+    client.cookies.set(ACCOUNT_COOKIE_NAME, cookie)
+    own = client.get("/api/v3/user/access-events").json()
+    assert [row["photo_id"] for row in own] == [anna_photo]
+    assert client.get(f"/api/v3/photos/{anna_photo}").status_code == 200
+    assert client.get(f"/api/v3/photos/{bob_photo}").status_code == 404
+
+
 def test_invalid_stored_runtime_setting_is_ignored(tmp_path: Path) -> None:
     settings = Settings(_env_file=None, db_path=tmp_path / "biogate.db", **_dirs(tmp_path))  # type: ignore[call-arg]
     database = Database(settings.db_path)
