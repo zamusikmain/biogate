@@ -62,6 +62,19 @@ try {
 } finally {
     $listener.Stop()
 }
+# Browsers try "localhost" over IPv6 first. If another program (Docker, for example) holds the
+# port there, localhost:$Port opens that program instead of BioGate, so say so up front.
+$listener6 = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::IPv6Loopback, $Port)
+try {
+    $listener6.Start()
+} catch [System.Net.Sockets.SocketException] {
+    if ($_.Exception.SocketErrorCode -eq [System.Net.Sockets.SocketError]::AddressAlreadyInUse) {
+        Write-Warning ("Another program listens on port $Port over IPv6, so http://localhost:$Port/ opens " +
+            "that program. Use http://127.0.0.1:$Port/ or start BioGate with -Port <number>.")
+    }
+} finally {
+    $listener6.Stop()
+}
 
 $url = "http://127.0.0.1:$Port/"
 Write-Host "BioGate: $url (admin console: ${url}admin). Press CTRL+C to stop."
