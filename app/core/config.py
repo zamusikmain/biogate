@@ -33,7 +33,6 @@ class Settings(BaseSettings):
     head_turn_delta: float = Field(default=0.16, ge=0.06, le=0.30)
     head_calibration_range: float = Field(default=0.05, ge=0.01, le=0.15)
     head_max_center_yaw: float = Field(default=0.20, ge=0.10, le=0.40)
-    store_attempt_images: bool = False
     attempt_image_dir: Path = Path("data/attempt_snapshots")
     attempt_image_retention_days: int = Field(default=7, ge=1, le=365)
     active_image_dir: Path = Path("data/active_images")
