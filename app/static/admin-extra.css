@@ -189,3 +189,33 @@ button:disabled { cursor: not-allowed; opacity: 1; }
 .integration-fields { border: 1px dashed #ced8e0; border-radius: 9px; padding: 10px 14px; }
 .integration-fields summary { cursor: pointer; font-size: 12px; color: #637583; }
 .integration-fields[open] summary { margin-bottom: 10px; }
+
+/* Usability pass: compact row actions, roomy search, live indicator, tabs, danger actions. */
+.filter-bar input { flex: 1 1 260px; }
+.row-actions { display: flex; gap: 6px; }
+.admin-body .table-wrap .row-actions button { padding: 6px 10px; }.access-filters { align-items: center; }
+.access-filters .live-indicator { margin-left: auto; font-size: 12px; white-space: nowrap; }
+.live-indicator.is-offline { color: var(--muted, #637583); }.form-grid label { align-content: start; }
+.form-grid label:not(:focus-within) .password-requirements { display: none; }
+.password-requirements { white-space: pre-line; }.admin-body .detail-tabs { display: flex; gap: 2px; flex-wrap: wrap; margin: 18px 0 14px; border-bottom: 1px solid var(--line, #dce3e8); }
+.admin-body .detail-tabs button { margin-bottom: -1px; padding: 9px 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted, #637583); font-weight: 600; cursor: pointer; }
+.admin-body .detail-tabs button:hover { color: var(--ink, #13202b); }
+.admin-body .detail-tabs button.active { color: var(--accent, #2563eb); border-bottom-color: var(--accent, #2563eb); }
+.admin-body button.danger { color: #b4233c; border: 1px solid #e5a3ae; background: var(--admin-control-bg, #fff); }
+.admin-body button.danger:hover:not(:disabled) { color: #fff; background: #b4233c; border-color: #b4233c; }
+.admin-body button.danger:disabled { color: #94a3b8; border-color: #cbd5e1; }
+:root[data-theme="dark"] .admin-body button.danger { color: #fb7185; border-color: #7f2d3c; }
+.admin-body [data-back-users] { margin-bottom: 12px; padding: 6px 2px; border: 0; background: transparent; color: var(--accent, #2563eb); font-weight: 600; cursor: pointer; }.admin-body .confirm-actions button.danger { color: #fff; background: #b4233c; border-color: #b4233c; }
+.admin-body .confirm-actions button.danger:disabled { color: #fff; background: #d79aa5; border-color: #d79aa5; }
+.metric-groups { display: grid; gap: 18px; margin-bottom: 18px; }
+.metric-group h2 { margin: 0 0 8px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted, #637583); }
+.metric-group .metric-grid { margin-bottom: 0; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.admin-body .metric-link { text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.admin-body .metric-link:hover { border-color: var(--accent, #2563eb); }
+.admin-body .metric-link.needs-attention { border-color: #f0b429; background: color-mix(in srgb, #f0b429 12%, var(--panel, #fff)); }.admin-body tr.clickable-row { cursor: pointer; }
+.admin-body tr.clickable-row:hover td { background: color-mix(in srgb, var(--accent, #2563eb) 6%, transparent); }
+.admin-body .detail-tabs button.active { background: transparent; }
+.admin-body .detail-actions { flex-wrap: wrap; justify-content: flex-end; }
+.admin-body .detail-actions button { white-space: nowrap; }
+:root[data-theme="dark"] .secondary-button { background: var(--admin-control-bg); color: var(--admin-control-ink); border-color: var(--line); }
+:root[data-theme="dark"] .secondary-button:hover { background: var(--admin-control-hover); }

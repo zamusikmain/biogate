@@ -17,19 +17,20 @@
     <section class="v3-login-panel">
       <div class="v3-top-actions">
         <div class="segmented"><button type="button" data-v3-lang="ru">RU</button><button type="button" data-v3-lang="en">EN</button></div>
-        <div class="segmented"><button type="button" data-v3-theme="light">☀</button><button type="button" data-v3-theme="dark">◐</button><button type="button" data-v3-theme="system">◉</button></div>
+        <div class="segmented"><button type="button" data-v3-theme="light">☀</button><button type="button" data-v3-theme="dark">☾</button><button type="button" data-v3-theme="system">◐</button></div>
       </div>
       <section id="password-panel">
-        <h2 data-v3-i18n="passwordLogin"></h2>
-        <form id="password-form" class="v3-form">
-          <label><span data-v3-i18n="login"></span><input name="login" autocomplete="username" required autofocus></label>
+        <h2 data-v3-i18n="signInTitle"></h2>
+        <!-- Face login is the main path of a biometric terminal; the password form stays right below. -->
+        <button id="face-login" class="v3-primary v3-face-cta" type="button" data-v3-i18n="faceLogin"></button>
+        <div class="v3-divider" data-v3-i18n="orPassword"></div>
+        <form id="password-form" class="v3-form v3-password-form">
+          <label><span data-v3-i18n="login"></span><input name="login" autocomplete="username" required></label>
           <label><span data-v3-i18n="password"></span><input name="password" type="password" autocomplete="current-password" required></label>
           <p class="v3-error" id="login-error"></p>
-          <button class="v3-primary" type="submit" data-v3-i18n="signIn"></button>
+          <button class="v3-secondary" type="submit" data-v3-i18n="signIn"></button>
         </form>
-        <button id="forgot" class="v3-secondary" type="button" data-v3-i18n="forgot"></button>
-        <div class="v3-divider" data-v3-i18n="or"></div>
-        <button id="face-login" class="v3-primary" type="button" data-v3-i18n="faceLogin"></button>
+        <button id="forgot" class="v3-link" type="button" data-v3-i18n="forgot"></button>
       </section>
       <section id="recovery-panel" class="v3-hidden">
         <h2 data-v3-i18n="recovery"></h2>

@@ -158,14 +158,19 @@ function show(view) {
 async function loadDashboard() {
   const data = await api('/api/v3/admin/dashboard');
   const stats = data.metrics;
-  const items = [
-    ['totalUsers', stats.total_users], ['active', stats.active_users], ['blocked', stats.blocked_users],
-    ['disabled', stats.disabled_users], ['enrolledUsers', stats.enrolled_users],
-    ['successful', stats.successful_today], ['rejectedCount', stats.denied_today],
-    ['unknown', stats.unknown_today], ['pendingBiometricRequests',stats.pending_biometric_requests], ['securityEvents', stats.security_alerts],
+  // Grouped so the eye lands on what needs action first; attention cards open their section.
+  const groups = [
+    ['attentionGroup', [['pendingBiometricRequests', stats.pending_biometric_requests, 'biometric-requests'], ['securityEvents', stats.security_alerts, 'events']]],
+    ['todayGroup', [['successful', stats.successful_today], ['rejectedCount', stats.denied_today], ['unknown', stats.unknown_today]]],
+    ['usersGroup', [['totalUsers', stats.total_users], ['active', stats.active_users], ['enrolledUsers', stats.enrolled_users], ['blocked', stats.blocked_users], ['disabled', stats.disabled_users]]],
   ];
-  $('admin-stats').innerHTML = items.map(([key, value]) => `<div class="metric-card"><span>${L.t(key)}</span><strong>${value || 0}</strong></div>`).join('');
-  table('recent-events', [L.t('date'),L.t('photo'), L.t('user'), L.t('method'), L.t('result')], data.recent_access.map(event => [date(event.timestamp),event.photo_id?evidenceThumbnail(event.photo_id):L.t('photoAbsent'),accountIdentityCell(event), esc(humanMethod(event.method)), badge(event.result)]));bindEvidenceErrors();document.querySelectorAll('[data-access-photo]').forEach(button=>button.onclick=()=>openPhotoViewer([button.dataset.accessPhoto],0));
+  const metric = ([key, value, view]) => view
+    ? `<button type="button" class="metric-card metric-link${value ? ' needs-attention' : ''}" data-go-view="${view}"><span>${L.t(key)}</span><strong>${value || 0}</strong></button>`
+    : `<div class="metric-card"><span>${L.t(key)}</span><strong>${value || 0}</strong></div>`;
+  $('admin-stats').innerHTML = groups.map(([title, items]) => `<section class="metric-group"><h2>${L.t(title)}</h2><div class="metric-grid">${items.map(metric).join('')}</div></section>`).join('');
+  document.querySelectorAll('[data-go-view]').forEach(button => button.onclick = () => show(button.dataset.goView));
+  const recentWithPhotos = data.recent_access.some(event => event.photo_id);
+  table('recent-events', [L.t('date'), ...(recentWithPhotos ? [L.t('photo')] : []), L.t('user'), L.t('method'), L.t('result')], data.recent_access.map(event => [date(event.timestamp), ...(recentWithPhotos ? [event.photo_id ? evidenceThumbnail(event.photo_id) : '—'] : []), accountIdentityCell(event), esc(humanMethod(event.method)), badge(event.result)]));bindEvidenceErrors();document.querySelectorAll('[data-access-photo]').forEach(button=>button.onclick=()=>openPhotoViewer([button.dataset.accessPhoto],0));
   const health = await api('/api/v3/admin/system-health');
   $('system-health').innerHTML = `<div class="metric-grid">${Object.entries(health.components).map(([name, value]) => `<div class="metric-card"><span>${esc(name)}</span><strong>${badge(value)}</strong></div>`).join('')}</div><p>${L.t('activeStorage')}: ${health.storage.active.files} · ${Math.round(health.storage.active.size_bytes / 1024)} KB &nbsp; ${L.t('archive')}: ${health.storage.archive.files} · ${Math.round(health.storage.archive.size_bytes / 1024)} KB &nbsp; ${L.t('freeDisk')}: ${(health.disk.free_bytes / 1073741824).toFixed(1)} GB</p>`;
 }
@@ -182,20 +187,25 @@ async function loadUsers() {
   if (role) query.set('role', role);
   if (biometric) query.set('biometric', biometric);
   const users = await api(`/api/v3/admin/accounts?${query}`);
-  table('users-list', [L.t('externalId'), L.t('displayName'), L.t('role'), L.t('status'), L.t('biometrics'), L.t('actions')], users.map(user => [
-    esc(user.external_id), accountIdentityCell(user), badge(user.role), badge(user.status), user.biometric_template_id ? badge('ENROLLED') : '—',
-    `<button data-open-account="${user.id}">${L.t('details')}</button> <button data-account-status="${user.id}" data-next-status="${user.status === 'ACTIVE' ? 'BLOCKED' : 'ACTIVE'}">${L.t(user.status === 'ACTIVE' ? 'block' : 'unblock')}</button> <button data-account-reset="${user.id}">${L.t('resetPassword')}</button>`,
+  table('users-list', [L.t('displayName'), L.t('role'), L.t('status'), L.t('biometrics'), L.t('actions')], users.map(user => [
+    accountIdentityCell(user), badge(user.role), badge(user.status), user.biometric_template_id ? badge('ENROLLED') : badge('NOT_ENROLLED'),
+    `<button data-open-account="${user.id}">${L.t('details')}</button>`,
   ]));
   renderAdminPager('users-list', usersPage, users.length, page => { usersPage = page; loadUsers(); });
-  document.querySelectorAll('[data-open-account]').forEach(button => button.onclick = event => { event.stopPropagation(); openV3User(Number(button.dataset.openAccount)); });
-  document.querySelectorAll('[data-account-status]').forEach(button => button.onclick = async event => {
-    event.stopPropagation();
-    const reason = await adminAsk({title:L.t(button.dataset.nextStatus==='BLOCKED'?'block':'unblock'),label:L.t('actionReason'),required:true,confirmKey:'save',danger:button.dataset.nextStatus==='BLOCKED'}); if (reason===null) return;
-    await api(`/api/v3/admin/accounts/${button.dataset.accountStatus}`, jsonOptions('PATCH', { status: button.dataset.nextStatus, reason }));
-    await loadUsers();
+  // The whole row opens the card; block and password reset live in the card.
+  document.querySelectorAll('[data-open-account]').forEach(button => {
+    const open = () => openV3User(Number(button.dataset.openAccount));
+    button.onclick = event => { event.stopPropagation(); open(); };
+    const row = button.closest('tr');
+    if (row) { row.classList.add('clickable-row'); row.onclick = open; }
   });
-  document.querySelectorAll('[data-account-reset]').forEach(button => button.onclick = event => { event.stopPropagation(); openPasswordResetDialog(Number(button.dataset.accountReset)); });
   localizePresentationOptions();
+}
+
+async function changeAccountStatus(id, nextStatus) {
+  const reason = await adminAsk({title:L.t(nextStatus==='BLOCKED'?'block':'unblock'),label:L.t('actionReason'),required:true,confirmKey:'save',danger:nextStatus==='BLOCKED'}); if (reason===null) return false;
+  await api(`/api/v3/admin/accounts/${id}`, jsonOptions('PATCH', { status: nextStatus, reason }));
+  return true;
 }
 
 async function openV3User(id, tab = 'overview') {
@@ -206,12 +216,13 @@ async function openV3User(id, tab = 'overview') {
   showDirect('user-detail', accountIdentity(user));
   history.replaceState({}, '', `/admin#users/${id}/${tab}`);
   const tabs = ['overview', 'biometrics', 'access', 'security', 'sessions', 'history', 'notes'];
-  $('user-card').innerHTML = `<button type="button" data-back-users>← ${L.t('users')}</button><div class="detail-hero"><div><h2>${esc(accountIdentity(user))}</h2><p>${esc(user.login)} · ${badge(user.role)} ${badge(user.status)}</p></div><div class="detail-actions"><button data-user-edit>${L.t('edit')}</button><button data-user-reset>${L.t('resetPassword')}</button><button data-user-erase class="danger">${L.t('erasePerson')}</button></div></div><div class="detail-tabs">${tabs.map(name => `<button data-user-tab="${name}" class="${name === tab ? 'active' : ''}">${L.t(name)}</button>`).join('')}</div><div id="v3-user-tab"></div>`;
+  $('user-card').innerHTML = `<button type="button" data-back-users>← ${L.t('users')}</button><div class="detail-hero"><div><h2>${esc(accountIdentity(user))}</h2><p>${esc(user.login)} · ${badge(user.role)} ${badge(user.status)}</p></div><div class="detail-actions"><button data-user-edit>${L.t('edit')}</button><button data-user-reset>${L.t('resetPassword')}</button><button data-user-status data-next-status="${user.status === 'ACTIVE' ? 'BLOCKED' : 'ACTIVE'}">${L.t(user.status === 'ACTIVE' ? 'block' : 'unblock')}</button><button data-user-erase class="danger">${L.t('erasePerson')}</button></div></div><div class="detail-tabs">${tabs.map(name => `<button data-user-tab="${name}" class="${name === tab ? 'active' : ''}">${L.t(name)}</button>`).join('')}</div><div id="v3-user-tab"></div>`;
   document.querySelector('[data-back-users]').onclick = () => show('users');
   document.querySelectorAll('[data-user-tab]').forEach(button => button.onclick = () => openV3User(id, button.dataset.userTab));
   document.querySelector('[data-user-reset]').onclick = () => openPasswordResetDialog(id);
   document.querySelector('[data-user-edit]').onclick = () => renderV3UserEdit(user, tab);
   document.querySelector('[data-user-erase]').onclick = () => openEraseAccountDialog(user);
+  document.querySelector('[data-user-status]').onclick = async event => { if (await changeAccountStatus(id, event.currentTarget.dataset.nextStatus)) await openV3User(id, selectedV3Tab); };
   await renderV3UserTab(user, tab);
 }
 
@@ -525,7 +536,11 @@ $('create-user').onsubmit = async event => {
     submit.textContent = originalLabel;
   }
 };
-$('apply-user-filters').onclick = () => { usersPage = 0; loadUsers(); };
+// Filters apply as soon as they change; typing waits for a short pause.
+let userSearchTimer = 0;
+const reloadUsersFromFirstPage = () => { usersPage = 0; loadUsers(); };
+$('user-search').oninput = () => { clearTimeout(userSearchTimer); userSearchTimer = setTimeout(reloadUsersFromFirstPage, 300); };
+['user-status-filter', 'user-role-filter', 'user-biometric-filter'].forEach(id => { $(id).onchange = reloadUsersFromFirstPage; });
 $('submit-photos').onclick = () => sendPhotos($('photo-files').files);
 $('start-webcam-enroll').onclick = webcamEnroll;
 $('tab-upload').onclick = () => selectEnrollmentMode('upload');

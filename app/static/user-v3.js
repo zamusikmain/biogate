@@ -51,7 +51,9 @@ async function show(view) {
   content.innerHTML = `<div class="v3-card">${V.t('processing')}</div>`;
   if (view === 'home') {
     const [profile, events, notifications] = await Promise.all([api('/api/v3/user/profile'), api('/api/v3/user/access-events'), api('/api/v3/user/notifications')]);
-    content.innerHTML = `<div class="v3-grid"><div class="v3-card"><small>${V.t('fullName')}</small><h2>${esc(accountIdentity(profile))}</h2><span class="v3-badge">${esc(V.t(profile.status))}</span></div><div class="v3-card"><small>${V.t('lastLogin')}</small><h2>${date(profile.last_login_at)}</h2><span>${esc(V.t(me.login_method))}</span></div><div class="v3-card"><small>${V.t('notifications')}</small><h2>${notifications.filter(item => !item.read_at).length}</h2></div></div><div class="v3-card"><h2>${V.t('myAccess')}</h2>${eventsTable(events.slice(0, 8))}</div>`;
+    // Same source as the table below, so the card and the list never disagree.
+    const lastLogin = events.find(event => event.result === 'SUCCESS');
+    content.innerHTML = `<div class="v3-grid"><div class="v3-card"><small>${V.t('fullName')}</small><h2>${esc(accountIdentity(profile))}</h2><span class="v3-badge">${esc(V.t(profile.status))}</span></div><div class="v3-card"><small>${V.t('lastLogin')}</small><h2>${date(lastLogin?.timestamp || profile.last_login_at)}</h2><span>${lastLogin ? esc(V.t(lastLogin.method)) : ''}</span></div><div class="v3-card"><small>${V.t('notifications')}</small><h2>${notifications.filter(item => !item.read_at).length}</h2></div></div><div class="v3-card"><h2>${V.t('myAccess')}</h2>${eventsTable(events.slice(0, 8))}</div>`;
   } else if (view === 'profile') {
     const profile = await api('/api/v3/user/profile');
     content.innerHTML = `<div class="v3-card">${kv(V.t('fullName'), accountIdentity(profile))}${kv(V.t('login'), profile.login)}${kv(V.t('role'), V.t(profile.role))}${kv(V.t('employeeId'), profile.employee_id)}${kv(V.t('department'), profile.department)}${kv(V.t('position'), profile.position)}${kv(V.t('status'), V.t(profile.status))}${kv(V.t('createdAt'), date(profile.created_at))}${kv(V.t('biometricStatus'), V.t(profile.enrolled_at ? 'ACTIVE' : 'NOT_ENROLLED'))}</div>`;
@@ -82,7 +84,8 @@ async function showBiometrics(content) {
   const canSubmit = !request || request.status === 'REVISION_REQUIRED';
   const gallery=request?.photos?.length?`<h3>${V.t('submittedPhotos')}</h3><div class="v3-request-gallery">${request.photos.map((photo,index)=>`<a href="/api/v3/photos/${encodeURIComponent(photo.id)}" target="_blank" rel="noopener"><img src="/api/v3/photos/${encodeURIComponent(photo.id)}" alt="${esc(`${V.t('submittedPhotos')} ${index+1}`)}" loading="lazy"></a>`).join('')}</div>`:request?`<p class="v3-photo-empty">${V.t('photosUnavailable')}</p>`:'';
   const details = request ? kv(V.t('requestStatus'), V.t(request.status)) + kv(V.t('adminComment'), request.admin_comment) + gallery : '';
-  const form = `<form id="bio-form" class="v3-form"><label>${V.t('selectPhotos')}<input name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple required></label><button class="v3-primary">${V.t('submitBiometric')}</button><button id="bio-camera" type="button" class="v3-secondary">${V.t('startCamera')}</button></form>`;
+  // Camera first (guided, fastest); uploading files is the alternative path.
+  const form = `<form id="bio-form" class="v3-form bio-form"><p class="bio-intro">${V.t('biometricIntro')}</p><button id="bio-camera" type="button" class="v3-primary">${V.t('startCamera')}</button><div class="v3-divider">${V.t('or')}</div><label class="bio-file"><input name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple required><span class="v3-secondary">${V.t('choosePhotos')}</span><small data-bio-file-count>${V.t('selectPhotos')}</small></label><button class="v3-secondary" data-bio-submit disabled>${V.t('submitBiometric')}</button></form>`;
   const cancel = request?.status === 'PENDING_REVIEW' ? `<button id="bio-cancel" class="v3-secondary">${V.t('cancel')}</button>` : '';
   const notice = biometricNotice ? `<p class="v3-success" role="status">${esc(biometricNotice)}</p>` : '';
   biometricNotice = '';
@@ -90,6 +93,13 @@ async function showBiometrics(content) {
   if (canSubmit) {
     q('bio-form').onsubmit = submitBiometric;
     q('bio-camera').onclick = webcamBiometric;
+    const files = q('bio-form').elements.photos;
+    files.onchange = () => {
+      const count = files.files.length;
+      const valid = count >= 3 && count <= 5;
+      q('bio-form').querySelector('[data-bio-submit]').disabled = !valid;
+      q('bio-form').querySelector('[data-bio-file-count]').textContent = count ? `${V.t('photosSelected')}: ${count}${valid ? '' : ` · ${V.t('selectPhotos')}`}` : V.t('selectPhotos');
+    };
   } else if (request?.status === 'PENDING_REVIEW') {
     q('bio-cancel').onclick = async () => {
       await api(`/api/v3/user/biometric-requests/${request.id}`, { method: 'DELETE' });

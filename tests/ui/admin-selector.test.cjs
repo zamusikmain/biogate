@@ -201,7 +201,9 @@ test('account identity presentation keeps names, logins, and roles separate', ()
   assert.match(v3Locales, /\['biogate administrator','biogate user'\]/);
   assert.match(source, /name==='role'\)return humanCode/);
   assert.match(source, /'login','role','timestamp'/);
-  assert.match(v3, /function startAccessLive\(\).*accountIdentityCell\(row\)/);
+  // Live events refresh the access table, which renders identities like every other table.
+  assert.match(v3, /async function loadV3Access\(\)[\s\S]*?accountIdentityCell\(row\)/);
+  assert.match(v3, /function startAccessLive\(\)[\s\S]*?loadV3Access\(\)/);
   assert.match(v3, /function loadV3Events\([\s\S]*accountIdentityCell\(row\)/);
   assert.match(user, /BioGateAccountIdentity\(account, V\.t\('unknownUser'\)\)/);
   assert.match(user, /kv\(V\.t\('role'\), V\.t\(profile\.role\)\)/);
