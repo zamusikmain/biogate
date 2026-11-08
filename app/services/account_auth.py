@@ -39,6 +39,7 @@ class AccountAuthService:
         self.settings = settings
         self.hasher = PasswordHasher(type=Type.ID)
         self.rate_limits = RateLimitStore(repository.db)
+        self._unknown_login_hash: str | None = None
 
     @staticmethod
     def validate_password(password: str) -> None:
@@ -46,11 +47,12 @@ class AccountAuthService:
             raise AccountAuthError("PASSWORD_TOO_SHORT")
         if len(password) > 1024:
             raise AccountAuthError("PASSWORD_TOO_LONG")
-        if not any("a" <= character <= "z" for character in password):
+        # Any alphabet counts: "Пароль" has an uppercase and lowercase letters just like "Password".
+        if not any(character.islower() for character in password):
             raise AccountAuthError("PASSWORD_LOWERCASE_REQUIRED")
-        if not any("A" <= character <= "Z" for character in password):
+        if not any(character.isupper() for character in password):
             raise AccountAuthError("PASSWORD_UPPERCASE_REQUIRED")
-        if not any("0" <= character <= "9" for character in password):
+        if not any(character.isdigit() for character in password):
             raise AccountAuthError("PASSWORD_DIGIT_REQUIRED")
         if not any(not character.isalnum() and not character.isspace() for character in password):
             raise AccountAuthError("PASSWORD_SPECIAL_REQUIRED")
@@ -60,12 +62,17 @@ class AccountAuthService:
         return self.hasher.hash(password)
 
     def verify_password(self, password_hash: str | None, password: str) -> bool:
-        if not password_hash:
-            return False
+        # Unknown logins and accounts without a password still pay for one Argon2 verification,
+        # so the response time does not reveal whether a login exists.
         try:
-            return bool(self.hasher.verify(password_hash, password))
+            return bool(self.hasher.verify(password_hash or self._dummy_hash(), password)) and bool(password_hash)
         except (VerifyMismatchError, VerificationError, InvalidHashError):
             return False
+
+    def _dummy_hash(self) -> str:
+        if self._unknown_login_hash is None:
+            self._unknown_login_hash = self.hasher.hash(secrets.token_urlsafe(32))
+        return self._unknown_login_hash
 
     def password_login(
         self, login: str, password: str, *, client_address: str = "", user_agent: str = ""
@@ -86,8 +93,6 @@ class AccountAuthService:
             raise AccountAuthError("LOGIN_RATE_LIMITED")
         user = self.repository.get_user_by_login(login)
         now = datetime.now(UTC)
-        if user and not bool(user.get("password_enabled", 1)):
-            self._denied_status(user, "PASSWORD_DISABLED", client_address, user_agent)
         if user and user.get("locked_until") and datetime.fromisoformat(str(user["locked_until"])) > now:
             raise AccountAuthError("LOGIN_RATE_LIMITED")
         valid = self.verify_password(str(user.get("password_hash")) if user else None, password)
@@ -126,6 +131,10 @@ class AccountAuthService:
                 event_id,
             )
             raise AccountAuthError("INVALID_CREDENTIALS")
+        # Account-specific refusals come only after a correct password, so a wrong guess never
+        # tells the caller that the login exists.
+        if not bool(user.get("password_enabled", 1)):
+            self._denied_status(user, "PASSWORD_DISABLED", client_address, user_agent)
         if user["status"] == "BLOCKED":
             self._denied_status(user, "BLOCKED", client_address, user_agent)
         if user["status"] == "DISABLED":
