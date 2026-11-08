@@ -11,4 +11,4 @@
 .bio-file input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 .bio-file span{display:inline-block;cursor:pointer}
 .bio-file small{color:var(--muted)}
-.bio-file:focus-within span{outline:3px solid var(--accent);outline-offset:2px}
+.bio-file:focus-within span{outline:3px solid var(--accent);outline-offset:2px}.v3-thumb{display:inline-block;cursor:zoom-in}.v3-thumb img{display:block;width:64px;height:48px;object-fit:cover;border-radius:7px;border:1px solid var(--line)}

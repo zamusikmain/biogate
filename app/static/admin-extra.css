@@ -219,3 +219,6 @@ button:disabled { cursor: not-allowed; opacity: 1; }
 .admin-body .detail-actions button { white-space: nowrap; }
 :root[data-theme="dark"] .secondary-button { background: var(--admin-control-bg); color: var(--admin-control-ink); border-color: var(--line); }
 :root[data-theme="dark"] .secondary-button:hover { background: var(--admin-control-hover); }
+/* Evidence thumbnails keep their size inside narrow table columns. */
+.admin-body .access-photo { display: inline-block; cursor: zoom-in; }
+.admin-body .access-photo img { width: 72px; height: 54px; max-width: none; aspect-ratio: auto; object-fit: cover; }
