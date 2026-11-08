@@ -91,6 +91,53 @@ def test_face_login_photos_reach_the_card_and_only_their_owner(client: TestClien
     assert client.get(f"/api/v3/photos/{bob_photo}").status_code == 404
 
 
+def test_unknown_login_costs_one_argon2_verification(client: TestClient) -> None:
+    auth = client.app.state.account_auth_service  # type: ignore[attr-defined]
+    calls: list[str] = []
+    original = auth.hasher
+
+    class CountingHasher:
+        def hash(self, password: str) -> str:
+            return str(original.hash(password))
+
+        def verify(self, password_hash: str, password: str) -> bool:
+            calls.append(password_hash)
+            return bool(original.verify(password_hash, password))
+
+    auth.hasher = CountingHasher()
+    try:
+        response = client.post("/api/v3/auth/password", json={"login": "nobody-here", "password": "Wrong-pass-123"})
+    finally:
+        auth.hasher = original
+    assert response.json()["detail"]["reason_code"] == "INVALID_CREDENTIALS"
+    assert len(calls) == 1
+
+
+def test_wrong_password_does_not_reveal_a_password_disabled_account(client: TestClient) -> None:
+    from argon2 import PasswordHasher, Type
+
+    state = client.app.state  # type: ignore[attr-defined]
+    user_id = create_account(client, "no.password")
+    secret = "Correct-pass-123"  # noqa: S105 -- test-only credential
+    state.repository.set_password_hash(user_id, PasswordHasher(type=Type.ID).hash(secret), False, "TEST")
+    state.repository.update_account(user_id, {"password_enabled": False})
+    client.cookies.clear()
+    wrong = client.post("/api/v3/auth/password", json={"login": "no.password", "password": "Wrong-pass-1234"})
+    assert wrong.status_code == 401 and wrong.json()["detail"]["reason_code"] == "INVALID_CREDENTIALS"
+    right = client.post("/api/v3/auth/password", json={"login": "no.password", "password": secret})
+    assert right.json()["detail"]["reason_code"] == "ACCOUNT_PASSWORD_DISABLED"
+
+
+def test_password_policy_accepts_any_alphabet() -> None:
+    from app.services.account_auth import AccountAuthError, AccountAuthService
+
+    AccountAuthService.validate_password("Пароль-надёжный1")
+    with pytest.raises(AccountAuthError, match="UPPERCASE"):
+        AccountAuthService.validate_password("пароль-надёжный1")
+    with pytest.raises(AccountAuthError, match="LOWERCASE"):
+        AccountAuthService.validate_password("ПАРОЛЬ-НАДЁЖНЫЙ1")
+
+
 def test_invalid_stored_runtime_setting_is_ignored(tmp_path: Path) -> None:
     settings = Settings(_env_file=None, db_path=tmp_path / "biogate.db", **_dirs(tmp_path))  # type: ignore[call-arg]
     database = Database(settings.db_path)
