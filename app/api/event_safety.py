@@ -23,8 +23,7 @@ def safe_event_metadata(value: Any) -> Any:
         return {
             key: safe_event_metadata(item)
             for key, item in value.items()
-            if key == "must_change_password"
-            or not any(fragment in key.casefold() for fragment in SENSITIVE_EVENT_KEYS)
+            if key == "must_change_password" or not any(fragment in key.casefold() for fragment in SENSITIVE_EVENT_KEYS)
         }
     if isinstance(value, list):
         return [safe_event_metadata(item) for item in value]

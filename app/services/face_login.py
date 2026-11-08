@@ -14,8 +14,9 @@ from numpy.typing import NDArray
 from app.core.config import Settings
 from app.services.biometrics.embedding import aggregate
 from app.services.biometrics.models import FrameAnalysis
-from app.services.challenges import BlinkStateMachine, ChallengeService, EphemeralCapture
+from app.services.challenges import BlinkStateMachine, EphemeralCapture, evaluate_pose
 from app.services.identification import IdentificationService
+from app.services.rate_limit import FACE_CHALLENGE_STARTS, RECOVERY_STARTS, RateLimitStore
 from app.services.repository import Repository
 
 
@@ -26,6 +27,7 @@ class FaceLoginState:
     sequence: list[str]
     expires_at: datetime
     target_user_id: int | None = None
+    client_key: str = ""
     index: int = 0
     blink_phase: str = "WAITING_OPEN"
     last_capture_at: datetime | None = None
@@ -39,21 +41,40 @@ class FaceLoginService:
         self,
         repository: Repository,
         settings: Settings,
-        challenge_service: ChallengeService,
         identification: IdentificationService,
     ):
         self.repository = repository
         self.settings = settings
-        self.challenge_service = challenge_service
         self.identification = identification
         self.blink = BlinkStateMachine()
         self._states: dict[str, FaceLoginState] = {}
-        self._recovery_starts: dict[str, list[datetime]] = {}
+        # Attempt counters survive restarts and are shared by workers; only live
+        # challenge state (embeddings, step) stays in this process.
+        self.rate_limits = RateLimitStore(repository.db)
         self._lock = threading.RLock()
 
     def create(self, mode: str = "IDENTIFY", login: str | None = None, client_address: str = "") -> dict[str, Any]:
+        """Start a challenge.
+
+        Raises ValueError when face login is disabled and PermissionError with a
+        reason code when the client or the process is over its limits.
+        """
         if mode == "IDENTIFY" and not self.settings.allow_face_login:
             raise ValueError("FACE_LOGIN_DISABLED")
+        client_key = self._client_key(client_address)
+        now = datetime.now(UTC)
+        with self._lock:
+            self._prune_expired(now)
+            if len(self._states) >= self.settings.face_login_max_active_challenges:
+                raise PermissionError("FACE_LOGIN_BUSY")
+        if not self.rate_limits.record_if_under(
+            FACE_CHALLENGE_STARTS,
+            client_key,
+            self.settings.face_login_max_attempts,
+            self.settings.face_login_window_seconds,
+            now.timestamp(),
+        ):
+            raise PermissionError("FACE_LOGIN_RATE_LIMITED")
         target_user_id = None
         if mode == "RECOVERY" and login:
             self._record_recovery_start(login, client_address)
@@ -68,17 +89,29 @@ class FaceLoginService:
                 target_user_id = int(user["id"])
         tail = ["TURN_LEFT", "TURN_RIGHT", "BLINK"]
         secrets.SystemRandom().shuffle(tail)
-        now = datetime.now(UTC)
         state = FaceLoginState(
             id=str(uuid.uuid4()),
             mode=mode,
             sequence=["CENTER", *tail],
             expires_at=now + timedelta(seconds=self.settings.challenge_ttl_seconds),
             target_user_id=target_user_id,
+            client_key=client_key,
         )
         with self._lock:
+            # A client that keeps restarting only holds its newest challenges; older
+            # unfinished ones are abandoned anyway and are dropped first.
+            own = [item for item in self._states.values() if item.client_key == client_key]
+            for stale in sorted(own, key=lambda item: item.expires_at)[
+                : max(0, len(own) - self.settings.face_login_max_active_per_client + 1)
+            ]:
+                self._states.pop(stale.id, None)
             self._states[state.id] = state
         return self._public_state(state)
+
+    @property
+    def active_challenges(self) -> int:
+        with self._lock:
+            return len(self._states)
 
     def expected_action(self, challenge_id: str) -> str:
         with self._lock:
@@ -127,7 +160,7 @@ class FaceLoginService:
                 accepted = blink_complete and self._cooldown_elapsed(state, now)
                 feedback = f"BLINK_{state.blink_phase}"
             else:
-                pose = self.challenge_service._evaluate_pose(state.capture, action, analysis.observation.yaw_proxy)
+                pose = evaluate_pose(state.capture, action, analysis.observation.yaw_proxy, self.settings)
                 detected, yaw_delta = pose.detected_pose, pose.yaw_delta
                 if state.capture.stability_step != state.index:
                     state.capture.stability_step, state.capture.stability_count = state.index, 0
@@ -254,18 +287,22 @@ class FaceLoginService:
         elapsed_ms = (now - state.last_capture_at).total_seconds() * 1000
         return elapsed_ms >= self.settings.challenge_cooldown_ms
 
+    def _client_key(self, client_address: str) -> str:
+        secret = self.settings.session_secret.get_secret_value()
+        return hmac.new(secret.encode(), f"face|{client_address}".encode(), hashlib.sha256).hexdigest()
+
+    def _prune_expired(self, now: datetime) -> None:
+        for state_id in [key for key, state in self._states.items() if state.expires_at <= now]:
+            del self._states[state_id]
+
     def _record_recovery_start(self, login: str, client_address: str) -> None:
         secret = self.settings.session_secret.get_secret_value()
         material = f"{client_address}|{login.casefold()}"
         key = hmac.new(secret.encode(), material.encode(), hashlib.sha256).hexdigest()
-        now = datetime.now(UTC)
-        cutoff = now - timedelta(seconds=self.settings.recovery_window_seconds)
-        with self._lock:
-            starts = [item for item in self._recovery_starts.get(key, []) if item >= cutoff]
-            if len(starts) >= self.settings.recovery_max_attempts:
-                raise PermissionError("RECOVERY_RATE_LIMITED")
-            starts.append(now)
-            self._recovery_starts[key] = starts
+        if not self.rate_limits.record_if_under(
+            RECOVERY_STARTS, key, self.settings.recovery_max_attempts, self.settings.recovery_window_seconds
+        ):
+            raise PermissionError("RECOVERY_RATE_LIMITED")
 
     @staticmethod
     def _candidate(candidate: Any) -> dict[str, Any] | None:

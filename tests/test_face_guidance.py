@@ -3,30 +3,42 @@ import subprocess
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.main import asset
 from tests.test_v3 import v3_admin_login
 
 ROOT = Path(__file__).parents[1]
 
 
-def test_javascript_runtime_regressions() -> None:
+@pytest.mark.parametrize("suite", ["face-guidance.test.cjs", "admin-selector.test.cjs"])
+def test_javascript_runtime_regressions(suite: str) -> None:
     node = shutil.which("node")
-    assert node, "Node.js is required for FaceGuidance runtime regression tests"
+    assert node, "Node.js is required for the frontend runtime regression tests"
     result = subprocess.run(  # noqa: S603
-        [node, "--test", str(ROOT / "tests/ui/face-guidance.test.cjs")],
-        cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
+        [node, "--test", str(ROOT / "tests/ui" / suite)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
     )
     assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_login_loads_guidance_before_controller_and_is_not_cached(client: TestClient) -> None:
+    client.cookies.delete("biogate_session")
     response = client.get("/")
     assert response.status_code == 200
     assert "no-store" in response.headers["cache-control"]
     text = response.text
-    assert text.index("face-guidance-locales.js?v=5") < text.index("face-guidance.js?v=5")
-    assert text.index("face-guidance.js?v=5") < text.index("login-v3.js?v=5")
+    assert text.index(asset("face-guidance-locales.js")) < text.index(asset("face-guidance.js"))
+    assert text.index(asset("face-guidance.js")) < text.index(asset("login-v3.js"))
+    script = client.get(asset("login-v3.js"))
+    assert script.status_code == 200
+    assert "immutable" in script.headers["cache-control"]
+    assert "no-cache" == client.get("/static/login-v3.js").headers["cache-control"]
     for obsolete in ('id="camera-action"', 'id="camera-progress"', 'id="face-result"'):
         assert obsolete not in text
     assert client.get("/__qa/report").status_code == 404
@@ -42,13 +54,19 @@ def test_face_login_geometry_is_observational_and_center_remains_server_owned(cl
     assert result.status_code == 200
     body = result.json()
     assert body["face_geometry"] == {
-        "x": 10, "y": 10, "width": 100, "height": 100, "image_width": 320, "image_height": 240,
+        "x": 10,
+        "y": 10,
+        "width": 100,
+        "height": 100,
+        "image_width": 320,
+        "image_height": 240,
     }
     assert body["accepted"] is False
     assert body["observed_action"] == "CALIBRATING"
 
 
 def test_user_frame_feedback_requires_session_csrf_and_does_not_enroll(client: TestClient) -> None:
+    client.cookies.delete("biogate_session")
     photo = {"photo": ("frame.jpg", b"face", "image/jpeg")}
     assert client.post("/api/v3/user/biometric-frame", files=photo).status_code == 401
     v3_admin_login(client)

@@ -1,8 +1,46 @@
+import math
+
 import cv2
 import numpy as np
 from numpy.typing import NDArray
 
 from app.services.biometrics.models import FaceObservation, QualityResult
+
+
+def line_roll_degrees(dx: float, dy: float) -> float:
+    """Signed angle of the line through both eyes, in degrees, folded into [-90, 90] (eye order may vary)."""
+    angle = math.degrees(math.atan2(dy, dx))
+    if angle > 90:
+        angle -= 180
+    elif angle < -90:
+        angle += 180
+    return angle
+
+
+def head_roll_degrees(raw: NDArray[np.float32]) -> float:
+    """Signed in-plane tilt of the line through the two YuNet eye landmarks (indexes 4-7), in degrees.
+
+    Only a fallback: YuNet's eye points stay near horizontal on tilted faces and read a 20-degree
+    tilt as roughly 3-5 degrees (LFW check in docs/MANUAL_TODO.md).
+    """
+    return line_roll_degrees(float(raw[6] - raw[4]), float(raw[7] - raw[5]))
+
+
+class EnrollmentPoseGate:
+    """Head-pose limits applied only to frames that become part of a stored template."""
+
+    def __init__(self, max_yaw: float, max_roll_degrees: float):
+        self.max_yaw = max_yaw
+        self.max_roll_degrees = max_roll_degrees
+
+    def evaluate(self, face: FaceObservation, roll_degrees: float | None = None) -> str | None:
+        """``roll_degrees`` comes from MediaPipe landmarks; without it the YuNet estimate is used."""
+        if abs(face.yaw_proxy) > self.max_yaw:
+            return "HEAD_TURNED"
+        roll = head_roll_degrees(face.raw) if roll_degrees is None else roll_degrees
+        if abs(roll) > self.max_roll_degrees:
+            return "HEAD_TILTED"
+        return None
 
 
 class QualityService:

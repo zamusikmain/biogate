@@ -12,7 +12,8 @@ from app.core.config import Settings
 from app.db.database import Database
 from app.services.biometrics.embedding import serialize_embedding
 from app.services.biometrics.models import FaceObservation, FrameAnalysis, QualityResult
-from app.services.challenges import ChallengeService
+from app.services.face_login import FaceLoginService
+from app.services.identification import IdentificationService
 from app.services.repository import Repository
 
 
@@ -29,20 +30,17 @@ def analysis(yaw: float = 0.0, ear: float = 0.25) -> FrameAnalysis:
     )
 
 
-def run_challenge(
-    service: ChallengeService, database: Database
-) -> tuple[list[float], float, bool]:
-    session = service.create("synthetic")
-    sequence = json.loads(session["expected_sequence"])
+def run_challenge(service: FaceLoginService) -> tuple[list[float], float, bool]:
+    challenge = service.create(client_address="profile")
+    challenge_id = str(challenge["challenge_id"])
     durations: list[float] = []
     challenge_started = time.perf_counter()
     result: dict[str, object] = {}
-    for action in sequence:
-        with database.write() as connection:
-            connection.execute(
-                "UPDATE verification_sessions SET last_capture_at=? WHERE id=?",
-                ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(), session["id"]),
-            )
+    for action in challenge["sequence"]:
+        # Skip the human-paced cooldown between steps; only server-side work is timed.
+        state = service._states.get(challenge_id)
+        if state is not None:
+            state.last_capture_at = datetime.now(UTC) - timedelta(seconds=1)
         if action == "CENTER":
             frames = [analysis(), analysis(0.01), analysis(-0.01)]
         elif action == "TURN_LEFT":
@@ -53,7 +51,7 @@ def run_challenge(
             frames = [analysis(ear=ear) for ear in (0.25, 0.25, 0.12, 0.25, 0.25)]
         for frame in frames:
             started = time.perf_counter()
-            result = service.analyze(str(session["id"]), frame, b"synthetic")
+            result = service.analyze(challenge_id, frame, b"synthetic")
             durations.append((time.perf_counter() - started) * 1000)
     return durations, (time.perf_counter() - challenge_started) * 1000, bool(result.get("completed"))
 
@@ -61,20 +59,20 @@ def run_challenge(
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix="biogate-liveness-") as directory:
         path = Path(directory) / "profile.db"
-        settings = Settings(db_path=path, challenge_cooldown_ms=200)
+        settings = Settings(db_path=path, challenge_cooldown_ms=200, face_login_max_attempts=100)
         database = Database(path)
         database.initialize()
         repository = Repository(database)
         repository.create_user("synthetic", "Synthetic profile")
         embedding = np.asarray([1.0, 0.0, 0.0], dtype=np.float32)
         repository.upsert_template("synthetic", "test", "1", serialize_embedding(embedding), 3, 1)
-        service = ChallengeService(repository, settings)
-        run_challenge(service, database)  # Warm caches before collecting informational timings.
+        service = FaceLoginService(repository, settings, IdentificationService(repository, settings))
+        run_challenge(service)  # Warm caches before collecting informational timings.
         durations: list[float] = []
         completion_times: list[float] = []
         completed = True
         for _ in range(5):
-            run_durations, completion_ms, run_completed = run_challenge(service, database)
+            run_durations, completion_ms, run_completed = run_challenge(service)
             durations.extend(run_durations)
             completion_times.append(completion_ms)
             completed = completed and run_completed

@@ -31,7 +31,9 @@ class PasswordResetRequest(BaseModel):
 
 
 class AccountCreateRequest(BaseModel):
-    external_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
+    # Identifier in an external system (HR, access control). Not used to sign in;
+    # the server generates an opaque one when it is omitted.
+    external_id: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
     login: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.@-]+$")
     full_name: str = Field(min_length=1, max_length=160)
     employee_id: str | None = Field(default=None, max_length=100)
@@ -43,13 +45,38 @@ class AccountCreateRequest(BaseModel):
     password_enabled: bool = True
     face_enabled: bool = True
     biometric_recovery_enabled: bool = True
+    password_mode: str = Field(default="TEMPORARY", pattern=r"^(TEMPORARY|PERMANENT)$")
     temporary_password: SecretStr | None = None
     generate_temporary_password: bool = False
+    new_password: SecretStr | None = None
+    confirmation: SecretStr | None = None
 
-    @field_validator("external_id", "login", "full_name", mode="before")
+    @model_validator(mode="after")
+    def validate_password_mode(self) -> "AccountCreateRequest":
+        permanent = self.new_password.get_secret_value() if self.new_password else ""
+        confirmation = self.confirmation.get_secret_value() if self.confirmation else ""
+        if self.password_mode == "TEMPORARY":  # noqa: S105 -- mode name, not a value
+            if permanent or confirmation:
+                raise ValueError("PASSWORD_MODE_INVALID")
+        else:
+            if self.generate_temporary_password or self.temporary_password or not permanent:
+                raise ValueError("PERMANENT_PASSWORD_REQUIRED")
+            if permanent != confirmation:
+                raise ValueError("PASSWORD_CONFIRMATION_MISMATCH")
+        return self
+
+    @field_validator("login", "full_name", mode="before")
     @classmethod
     def strip_required_text(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
+
+    @field_validator("external_id", mode="before")
+    @classmethod
+    def normalize_external_id(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
 
     @field_validator("employee_id", mode="before")
     @classmethod
@@ -153,6 +180,11 @@ class SecurityReviewRequest(BaseModel):
 
 class BackupRestoreRequest(BaseModel):
     confirmation: str = Field(pattern=r"^RESTORE$")
+
+
+class AccountErasureRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+    confirmation: str = Field(pattern=r"^ERASE$")
 
 
 class AdminSettingsRequest(BaseModel):

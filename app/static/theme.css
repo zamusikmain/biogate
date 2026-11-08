@@ -1,0 +1,331 @@
+/*
+ * BioGate visual theme. Loaded last on every page: one set of tokens (colors, type, radius,
+ * spacing) for the admin console, the user cabinet and the login screen, in light and dark.
+ * The older stylesheets keep layout; this file decides how things look.
+ */
+
+:root,
+:root[data-theme="light"] {
+  --t-bg: #f5f6f8;
+  --t-surface: #ffffff;
+  --t-surface-2: #f0f2f5;
+  --t-ink: #1d2733;
+  --t-muted: #5d6a79;
+  --t-faint: #8995a3;
+  --t-line: #e2e6eb;
+  --t-line-strong: #cfd5dd;
+  --t-accent: #2f6bd8;
+  --t-accent-hover: #2559b8;
+  --t-accent-soft: #e9f0fc;
+  --t-on-accent: #ffffff;
+  --t-success: #1d7f53;
+  --t-success-soft: #e5f3ec;
+  --t-warning: #96600b;
+  --t-warning-soft: #fcf1de;
+  --t-danger: #bf3447;
+  --t-danger-soft: #fbe9ec;
+  --t-radius: 8px;
+  --t-radius-card: 12px;
+  --t-control-h: 38px;
+  --t-focus: 0 0 0 3px color-mix(in srgb, var(--t-accent) 30%, transparent);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --t-bg: #0f1419;
+  --t-surface: #161c23;
+  --t-surface-2: #1c232c;
+  --t-ink: #e5e9ee;
+  --t-muted: #9ba6b2;
+  --t-faint: #717d8a;
+  --t-line: #29313b;
+  --t-line-strong: #36404c;
+  --t-accent: #6b9ff2;
+  --t-accent-hover: #86b1f5;
+  --t-accent-soft: #1d2a3d;
+  --t-on-accent: #0f1419;
+  --t-success: #57c393;
+  --t-success-soft: #16302a;
+  --t-warning: #e2ad4e;
+  --t-warning-soft: #33280f;
+  --t-danger: #f07c8c;
+  --t-danger-soft: #3a1d23;
+  color-scheme: dark;
+}
+
+/* Before the theme script runs, a "system" page follows the OS. */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    --t-bg: #0f1419;
+    --t-surface: #161c23;
+    --t-surface-2: #1c232c;
+    --t-ink: #e5e9ee;
+    --t-muted: #9ba6b2;
+    --t-faint: #717d8a;
+    --t-line: #29313b;
+    --t-line-strong: #36404c;
+    --t-accent: #6b9ff2;
+    --t-accent-hover: #86b1f5;
+    --t-accent-soft: #1d2a3d;
+    --t-on-accent: #0f1419;
+    color-scheme: dark;
+  }
+}
+
+/* Older stylesheets read these names; point them at the theme. */
+:root,
+:root[data-theme="light"],
+:root[data-theme="dark"],
+:root[data-theme="system"] {
+  --bg: var(--t-bg);
+  --panel: var(--t-surface);
+  --ink: var(--t-ink);
+  --text: var(--t-ink);
+  --muted: var(--t-muted);
+  --line: var(--t-line);
+  --accent: var(--t-accent);
+  --accent2: var(--t-accent-hover);
+  --danger: var(--t-danger);
+  --ok: var(--t-success);
+  --blue: var(--t-accent);
+  --admin-bg: var(--t-bg);
+  --admin-ink: var(--t-ink);
+  --admin-control-bg: var(--t-surface);
+  --admin-control-ink: var(--t-ink);
+  --admin-control-hover: var(--t-surface-2);
+  --shadow: none;
+}
+
+/* ---- Base ---------------------------------------------------------------------------- */
+html body {
+  background: var(--t-bg);
+  color: var(--t-ink);
+  font: 14px/1.55 "Segoe UI", Inter, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+html body h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
+html body h2 { font-size: 17px; font-weight: 600; }
+html body h3 { font-size: 15px; font-weight: 600; }
+html body small { font-size: 12px; }
+html body code { font-size: 12px; }
+html body a { color: var(--t-accent); }
+
+.icon { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---- Navigation: admin sidebar and user sidebar share one look ---------------------- */
+html .admin-sidebar,
+html .v3-sidebar {
+  background: var(--t-surface);
+  color: var(--t-ink);
+  border-right: 1px solid var(--t-line);
+  padding: 20px 12px;
+}
+html .admin-brand, html .v3-brand { padding: 0 8px 22px; color: var(--t-ink); }
+html .brand-mark, html .v3-logo {
+  width: 32px; height: 32px; border-radius: 9px;
+  background: var(--t-accent-soft); color: var(--t-accent); font-size: 12px; font-weight: 700;
+}
+html .brand strong, html .v3-brand strong { font-size: 15px; font-weight: 600; }
+html .brand small, html .v3-brand small { font-size: 11px; color: var(--t-faint); letter-spacing: 0.04em; }
+html .admin-nav, html .v3-nav { gap: 2px; margin-top: 0; }
+html .admin-nav button,
+html .v3-nav button {
+  display: flex; align-items: center; justify-content: flex-start; gap: 11px;
+  padding: 9px 10px; border-radius: var(--t-radius);
+  background: transparent; color: var(--t-muted); font-size: 14px;
+}
+html .admin-nav button b { font-weight: 500; }
+html .admin-nav button:hover, html .v3-nav button:hover { background: var(--t-surface-2); color: var(--t-ink); }
+html .admin-nav button.active, html .v3-nav button.active { background: var(--t-accent-soft); color: var(--t-accent); }
+html .admin-nav button.active b { font-weight: 600; }
+html .terminal-link { color: var(--t-muted); font-size: 13px; padding: 10px; }
+html .terminal-link:hover { color: var(--t-accent); }
+
+/* ---- Page header ---------------------------------------------------------------------- */
+html .admin-main, html .v3-main { padding: 26px clamp(20px, 3.5vw, 48px); }
+html .admin-header, html .v3-header { margin-bottom: 22px; }
+html .admin-header h1, html .v3-header h1 { margin: 0; font-size: 24px; }
+html .section-label, html .v3-header > div > small { display: none; }
+html .admin-identity span { font-size: 12px; color: var(--t-faint); }
+html .admin-identity strong { font-size: 13px; font-weight: 600; }
+
+/* Language and theme switches: small quiet segmented controls. */
+html .locale, html .segmented {
+  display: inline-flex; gap: 2px; padding: 3px;
+  border: 1px solid var(--t-line); border-radius: var(--t-radius); background: var(--t-surface);
+}
+html .locale button, html .segmented button {
+  min-width: 32px; min-height: 28px; padding: 4px 8px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--t-muted); font-size: 12px; font-weight: 500;
+}
+html .locale button:hover, html .segmented button:hover { background: var(--t-surface-2); color: var(--t-ink); }
+html .locale button.active, html .segmented button.active { background: var(--t-accent-soft); color: var(--t-accent); }
+
+/* ---- Cards ---------------------------------------------------------------------------- */
+html .data-card, html .form-card, html .detail-hero, html .v3-card,
+html .metric-card, html .table-wrap {
+  background: var(--t-surface); color: var(--t-ink);
+  border: 1px solid var(--t-line); border-radius: var(--t-radius-card); box-shadow: none;
+}
+html .data-card, html .form-card { padding: 20px 22px; }
+html .card-heading h2, html .form-card h2, html .v3-card h2 { font-size: 17px; font-weight: 600; }
+html .card-heading p { color: var(--t-muted); font-size: 13px; }
+
+html .metric-card { padding: 16px 18px; }
+html .metric-card span { font-size: 13px; color: var(--t-muted); }
+html .metric-card strong { display: block; margin-top: 4px; font-size: 26px; font-weight: 600; line-height: 1.2; }
+html .metric-group h2 { font-size: 13px; font-weight: 600; color: var(--t-muted); text-transform: none; letter-spacing: 0; }
+html .admin-body .metric-link.needs-attention { border-color: color-mix(in srgb, var(--t-warning) 45%, var(--t-line)); background: var(--t-warning-soft); }
+
+/* Profile facts: quiet tiles instead of a box per field. */
+html .profile-grid { gap: 8px; }
+html .profile-field { background: var(--t-surface-2); border: 0; border-radius: 10px; padding: 12px 14px; }
+html .profile-field span { font-size: 12px; color: var(--t-muted); }
+html .profile-field strong { font-size: 14px; font-weight: 600; }
+html .detail-hero { padding: 20px 22px; }
+html .detail-hero h2 { font-size: 22px; margin: 0 0 6px; }
+
+/* ---- Tables --------------------------------------------------------------------------- */
+html table { font-size: 14px; }
+html th, html td,
+html .v3-table th, html .v3-table td {
+  padding: 11px 14px; border-bottom: 1px solid var(--t-line); font-size: 14px; vertical-align: middle;
+}
+html th, html .v3-table th {
+  font-size: 12px; font-weight: 600; color: var(--t-muted);
+  text-transform: none; letter-spacing: 0; background: var(--t-surface);
+}
+html tbody tr:last-child td { border-bottom: 0; }
+html .admin-body tr.clickable-row:hover td { background: var(--t-surface-2); }
+html .account-identity strong { font-weight: 600; }
+html .account-identity small { font-size: 12px; color: var(--t-muted); }
+
+/* ---- Status badges: soft tints with readable text ------------------------------------- */
+html .badge, html .v3-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 500;
+  background: var(--t-surface-2); color: var(--t-muted);
+}
+html .badge::before, html .v3-badge::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .8;
+}
+html .badge.good, html .v3-badge.good { background: var(--t-success-soft); color: var(--t-success); }
+html .badge.bad, html .v3-badge.bad { background: var(--t-danger-soft); color: var(--t-danger); }
+
+/* ---- Buttons -------------------------------------------------------------------------- */
+html .admin-body .detail-actions button,
+html .admin-body .card-heading button,
+html .admin-body .table-wrap button:not(.access-photo),
+html .admin-body .pager button,
+html .admin-body .confirm-actions button,
+html .admin-body .photo-viewer-controls button,
+html .admin-body .password-input-row button,
+html .admin-body .v3-card button,
+html .admin-body .data-card > button,
+html .v3-session button,
+html .pager button,
+html .secondary-button,
+html .v3-secondary {
+  min-height: 34px; padding: 6px 14px; border-radius: var(--t-radius);
+  border: 1px solid var(--t-line-strong); background: var(--t-surface); color: var(--t-ink);
+  font-size: 14px; font-weight: 500; cursor: pointer;
+}
+html .admin-body .detail-actions button:hover,
+html .admin-body .card-heading button:hover,
+html .admin-body .table-wrap button:not(.access-photo):hover,
+html .admin-body .pager button:hover,
+html .admin-body .confirm-actions button:hover,
+html .admin-body .photo-viewer-controls button:hover,
+html .admin-body .v3-card button:hover,
+html .v3-session button:hover,
+html .pager button:hover,
+html .secondary-button:hover,
+html .v3-secondary:hover { background: var(--t-surface-2); }
+
+html .admin-body button.primary-small, html .admin-body a.primary-small, html .primary-small,
+html .v3-primary {
+  min-height: 36px; padding: 8px 16px !important; border: 0 !important; border-radius: var(--t-radius);
+  background: var(--t-accent); color: var(--t-on-accent); font-size: 14px; font-weight: 600;
+  box-shadow: none; text-decoration: none; display: inline-flex; align-items: center; justify-content: center;
+}
+html .admin-body button.primary-small:hover, html .primary-small:hover, html .v3-primary:hover { background: var(--t-accent-hover); }
+html .v3-face-cta { min-height: 48px; font-size: 15px; }
+
+html .admin-body button.danger {
+  min-height: 34px; padding: 6px 14px; border-radius: var(--t-radius);
+  border: 1px solid color-mix(in srgb, var(--t-danger) 40%, var(--t-line)); background: var(--t-surface); color: var(--t-danger);
+  font-weight: 500;
+}
+html .admin-body button.danger:hover:not(:disabled) { background: var(--t-danger); border-color: var(--t-danger); color: #fff; }
+html .admin-body .confirm-actions button.danger { background: var(--t-danger); border-color: var(--t-danger); color: #fff; }
+html button:disabled, html .admin-body button:disabled { opacity: .5; cursor: not-allowed; }
+html .v3-link, html .link-button { color: var(--t-accent); font-weight: 500; }
+
+/* ---- Form controls -------------------------------------------------------------------- */
+html .filter-bar input, html .filter-bar select,
+html .form-grid input, html .form-grid select, html .form-grid textarea,
+html .v3-form input, html .v3-form select, html .v3-form textarea,
+html .dialog-field textarea, html .dialog-field input, html .password-input-row input {
+  min-height: var(--t-control-h); padding: 8px 12px; border-radius: var(--t-radius);
+  border: 1px solid var(--t-line-strong); background: var(--t-surface); color: var(--t-ink); font-size: 14px;
+}
+html .form-grid textarea, html .dialog-field textarea { min-height: 84px; }
+html .filter-bar input:focus, html .filter-bar select:focus,
+html .form-grid input:focus, html .form-grid select:focus, html .form-grid textarea:focus,
+html .v3-form input:focus, html .v3-form select:focus, html .dialog-field textarea:focus {
+  outline: none; border-color: var(--t-accent); box-shadow: var(--t-focus);
+}
+html .filter-bar select option, html .form-grid select option { background: var(--t-surface); color: var(--t-ink); }
+html .form-grid label, html .v3-form label { font-size: 13px; font-weight: 500; color: var(--t-ink); gap: 6px; }
+html .form-grid small, html .password-requirements { font-size: 12px; color: var(--t-muted); }
+html input::placeholder, html textarea::placeholder { color: var(--t-faint); }
+
+/* ---- Tabs ----------------------------------------------------------------------------- */
+html .admin-body .detail-tabs { border-bottom: 1px solid var(--t-line); gap: 4px; }
+html .admin-body .detail-tabs button { padding: 9px 12px; color: var(--t-muted); font-size: 14px; font-weight: 500; border-bottom: 2px solid transparent; border-radius: 0; }
+html .admin-body .detail-tabs button:hover { color: var(--t-ink); }
+html .admin-body .detail-tabs button.active { color: var(--t-accent); border-bottom-color: var(--t-accent); background: transparent; }
+
+/* ---- Dialogs, toast, pager ------------------------------------------------------------ */
+html dialog { background: var(--t-surface); color: var(--t-ink); border: 1px solid var(--t-line); border-radius: 14px; box-shadow: 0 20px 60px #0003; }
+html dialog::backdrop { background: color-mix(in srgb, #0b1016 55%, transparent); }
+html .dialog-close { color: var(--t-muted); }
+html #toast { background: var(--t-ink); color: var(--t-surface); border-radius: var(--t-radius); font-size: 14px; }
+html .pager span { color: var(--t-muted); font-size: 13px; }
+html .info-state, html .v3-success { border-radius: 10px; }
+
+/* ---- Live indicator ------------------------------------------------------------------- */
+html .live-indicator { color: var(--t-success); font-size: 13px; font-weight: 500; }
+
+/* ---- Login ---------------------------------------------------------------------------- */
+html .v3-login { background: var(--t-bg); }
+html .v3-login-shell { background: var(--t-surface); border: 1px solid var(--t-line); border-radius: 16px; box-shadow: none; }
+html .v3-login-info { background: var(--t-surface-2); color: var(--t-ink); }
+html .v3-login-info h1 { font-size: 30px; line-height: 1.2; }
+html .v3-login-info p { color: var(--t-muted); }
+html .v3-divider { color: var(--t-faint); font-size: 13px; }
+html .v3-divider::before, html .v3-divider::after { background: var(--t-line); }
+
+/* ---- User cabinet --------------------------------------------------------------------- */
+html .v3-card { padding: 18px 20px; }
+html .v3-card small { color: var(--t-muted); font-size: 13px; }
+html .v3-kv { border-bottom: 1px solid var(--t-line); padding: 10px 0; }
+html .v3-kv span { color: var(--t-muted); font-size: 13px; }
+html .v3-notification, html .v3-session { background: var(--t-surface); border-color: var(--t-line); border-radius: 10px; }
+
+/* ---- Avatars in lists ----------------------------------------------------------------- */
+.identity-with-avatar { display: flex; align-items: center; gap: 10px; }
+.avatar {
+  width: 32px; height: 32px; flex: none; border-radius: 50%;
+  display: grid; place-items: center; font-size: 12px; font-weight: 600;
+  background: var(--t-accent-soft); color: var(--t-accent);
+}
+
+/* Neutral badges (roles, plain labels) carry no status dot; the page title already names the users list. */
+html .badge:not(.good):not(.bad)::before { display: none; }
+html #users > .card-heading h2 { display: none; }
+html #v3-access-table td:nth-last-child(2) { white-space: normal; min-width: 150px; }
+/* admin-extra.css redefines these on .admin-body for dark mode; keep them on the theme palette. */
+:root[data-theme] body.admin-body { --admin-bg: var(--t-bg); --admin-ink: var(--t-ink); --admin-control-bg: var(--t-surface); --admin-control-ink: var(--t-ink); --admin-control-hover: var(--t-surface-2); }
+html .v3-error:empty { display: none; }
+html .v3-password-form { gap: 12px; }

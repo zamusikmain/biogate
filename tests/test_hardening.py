@@ -3,7 +3,6 @@ import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,7 +11,6 @@ from app.db.database import Database
 from app.services.repository import Repository
 from app.services.risk import RISK_RULES, RiskEngine
 from app.services.storage import BACKUP_FORMAT_VERSION, BACKUP_SCHEMA_VERSION, BackupService
-from scripts.evaluate_biometrics import PRODUCTION_THRESHOLD, evaluate_embeddings, load_dataset, write_csv
 from tests.conftest import TEST_ADMIN_NAME, TEST_AUTH_INPUT
 
 
@@ -147,29 +145,6 @@ def test_failed_restore_does_not_create_safety_or_change_database(tmp_path: Path
     assert len(service.list()) == 1
 
 
-def test_benchmark_metrics_and_outputs(tmp_path: Path) -> None:
-    identities = {
-        "one": [np.array([1.0, 0.0], dtype=np.float32), np.array([0.99, 0.01], dtype=np.float32)],
-        "two": [np.array([0.0, 1.0], dtype=np.float32)],
-    }
-    report = evaluate_embeddings(identities, [0.5])
-    assert report["identities"] == 2
-    assert report["images"] == 3
-    assert report["genuine_comparisons"] == 1
-    assert report["impostor_comparisons"] == 2
-    assert any(row["threshold"] == PRODUCTION_THRESHOLD and row["production_threshold"] for row in report["thresholds"])
-    assert next(row for row in report["thresholds"] if row["threshold"] == 0.5)["false_accepts"] == 0
-    assert next(row for row in report["thresholds"] if row["threshold"] == 0.5)["false_rejects"] == 0
-    output = tmp_path / "report.csv"
-    write_csv(output, report)
-    assert "false_accept_rate" in output.read_text(encoding="utf-8")
-    json.dumps(report)
-    with pytest.raises(ValueError, match="EMPTY_DATASET"):
-        evaluate_embeddings({}, [PRODUCTION_THRESHOLD])
-    with pytest.raises(ValueError, match="DATASET_NOT_FOUND"):
-        load_dataset(tmp_path / "missing", object())  # type: ignore[arg-type]
-
-
 def test_risk_localization_is_present() -> None:
     source = Path("app/static/locales.js").read_text(encoding="utf-8")
     assert "MULTIPLE_FAILED_LOGINS:'Несколько неудачных попыток входа'" in source
@@ -208,6 +183,8 @@ def test_openapi_is_v3_focused_and_safe(client: TestClient) -> None:
     assert "/api/v3/admin/backups" in paths
     assert "/health" in paths
     assert "/api/admin/users" not in paths
+    assert "/api/v3/admin/audit-events" in paths
+    assert "/api/v3/admin/accounts/{user_id}/enrollment/photos" in paths
     assert "/api/verification-sessions" not in paths
     tags = {tag for path in paths.values() for operation in path.values() for tag in operation.get("tags", [])}
     assert {

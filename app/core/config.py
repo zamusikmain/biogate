@@ -6,7 +6,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="BIOGATE_", env_file=".env", extra="ignore")
+    # validate_assignment: runtime overrides stored in the database go through the same limits as .env.
+    model_config = SettingsConfigDict(env_prefix="BIOGATE_", env_file=".env", extra="ignore", validate_assignment=True)
 
     db_path: Path = Path("data/biogate.db")
     model_cache: Path = Path("model_cache")
@@ -21,6 +22,9 @@ class Settings(BaseSettings):
     min_sharpness: float = Field(default=55.0, ge=0)
     min_brightness: float = Field(default=45.0, ge=0, le=255)
     max_brightness: float = Field(default=215.0, ge=0, le=255)
+    # Extra limits for frames that become a stored template (enrollment and biometric updates).
+    enrollment_max_yaw: float = Field(default=0.35, ge=0.05, le=1.0)
+    enrollment_max_roll_degrees: float = Field(default=20.0, ge=1.0, le=45.0)
     challenge_ttl_seconds: int = Field(default=120, ge=30, le=600)
     challenge_cooldown_ms: int = Field(default=200, ge=200, le=3000)
     head_baseline_frames: int = Field(default=3, ge=2, le=8)
@@ -29,21 +33,24 @@ class Settings(BaseSettings):
     head_turn_delta: float = Field(default=0.16, ge=0.06, le=0.30)
     head_calibration_range: float = Field(default=0.05, ge=0.01, le=0.15)
     head_max_center_yaw: float = Field(default=0.20, ge=0.10, le=0.40)
-    store_attempt_images: bool = False
     attempt_image_dir: Path = Path("data/attempt_snapshots")
     attempt_image_retention_days: int = Field(default=7, ge=1, le=365)
     active_image_dir: Path = Path("data/active_images")
     archive_dir: Path = Path("data/archive")
     backup_dir: Path = Path("data/backups")
-    active_image_days: int = Field(default=60, ge=60, le=60)
+    active_image_days: int = Field(default=60, ge=1, le=3650)
+    # Archiving, snapshot cleanup and the disk check run at startup and then on this
+    # interval; 0 keeps only the startup run.
+    maintenance_interval_seconds: int = Field(default=24 * 60 * 60, ge=0, le=7 * 24 * 60 * 60)
+    min_free_disk_mb: int = Field(default=1024, ge=0, le=1024 * 1024)
+    # Optional rotating JSON log file in addition to the console.
+    log_file: Path | None = None
+    log_max_bytes: int = Field(default=10 * 1024 * 1024, ge=64 * 1024, le=1024 * 1024 * 1024)
+    log_backup_count: int = Field(default=5, ge=1, le=100)
     admin_username: str = ""
     admin_password_hash: SecretStr = SecretStr("")
     session_secret: SecretStr = SecretStr("")
-    admin_session_ttl_seconds: int = Field(default=8 * 60 * 60, ge=300, le=7 * 24 * 60 * 60)
     admin_cookie_secure: bool = False
-    admin_login_max_attempts: int = Field(default=5, ge=2, le=20)
-    admin_login_window_seconds: int = Field(default=5 * 60, ge=30, le=60 * 60)
-    admin_login_cooldown_seconds: int = Field(default=60, ge=10, le=60 * 60)
     account_session_ttl_seconds: int = Field(default=8 * 60 * 60, ge=300, le=7 * 24 * 60 * 60)
     account_session_idle_seconds: int = Field(default=30 * 60, ge=60, le=24 * 60 * 60)
     password_min_length: int = Field(default=12, ge=12, le=12)
@@ -53,6 +60,12 @@ class Settings(BaseSettings):
     recovery_authorization_ttl_seconds: int = Field(default=5 * 60, ge=60, le=30 * 60)
     recovery_max_attempts: int = Field(default=5, ge=2, le=20)
     recovery_window_seconds: int = Field(default=10 * 60, ge=60, le=24 * 60 * 60)
+    # Face login and recovery challenges started from one client address within the window.
+    face_login_max_attempts: int = Field(default=10, ge=2, le=100)
+    face_login_window_seconds: int = Field(default=5 * 60, ge=30, le=60 * 60)
+    # Live (unfinished, unexpired) challenges held in memory, per client and for the whole process.
+    face_login_max_active_per_client: int = Field(default=3, ge=1, le=20)
+    face_login_max_active_challenges: int = Field(default=200, ge=10, le=10_000)
     allow_face_login: bool = True
     allow_password_login: bool = True
     debug: bool = False

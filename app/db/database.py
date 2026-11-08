@@ -1,8 +1,15 @@
 import sqlite3
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
+
+# SCHEMA plus MIGRATION_COLUMNS below build the V3 baseline from any older file, idempotently.
+# For every later schema change: add MIGRATIONS[n] (upgrades user_version n -> n + 1) and bump
+# SCHEMA_VERSION. Backups carry this number too.
+BASELINE_VERSION = 3
+MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {}
+SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -220,6 +227,13 @@ CREATE TABLE IF NOT EXISTS admin_notes (
   text TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS rate_limit_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bucket TEXT NOT NULL,
+  key TEXT NOT NULL,
+  occurred_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_rate_limit_events_key ON rate_limit_events(bucket, key, occurred_at);
 CREATE TABLE IF NOT EXISTS backups (
   id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL,
@@ -266,6 +280,12 @@ MIGRATION_COLUMNS: dict[str, dict[str, str]] = {
 }
 
 
+def _casefold(value: object) -> str | None:
+    if value is None:
+        return None
+    return value.casefold() if isinstance(value, str) else str(value).casefold()
+
+
 class Database:
     def __init__(self, path: Path):
         self.path = path
@@ -274,6 +294,14 @@ class Database:
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
+            current = int(connection.execute("PRAGMA user_version").fetchone()[0])
+            if current > SCHEMA_VERSION:
+                raise RuntimeError(
+                    f"Database schema {current} is newer than this BioGate supports ({SCHEMA_VERSION}). "
+                    "Update the application instead of opening the database with an older version."
+                )
+            # WAL is stored in the database file, so setting it once here covers every later connection.
+            connection.execute("PRAGMA journal_mode = WAL")
             connection.executescript(SCHEMA)
             for table, columns in MIGRATION_COLUMNS.items():
                 existing = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
@@ -297,14 +325,17 @@ class Database:
                        WHERE sample.biometric_template_id=biometric_templates.id
                    )"""
             )
-            connection.execute("PRAGMA user_version = 3")
+            for version in range(max(current, BASELINE_VERSION), SCHEMA_VERSION):
+                MIGRATIONS[version](connection)
+            connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.path, timeout=10, check_same_thread=False)
         connection.row_factory = sqlite3.Row
+        # SQLite's LOWER() and LIKE only fold ASCII; searches for Cyrillic names need Unicode casefolding.
+        connection.create_function("casefold", 1, _casefold, deterministic=True)
         connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA journal_mode = WAL")
         try:
             yield connection
             connection.commit()

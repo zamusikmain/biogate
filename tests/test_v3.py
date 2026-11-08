@@ -133,7 +133,7 @@ def test_admin_console_is_consolidated_and_avoids_native_prompts() -> None:
     assert "normalizeAdminView" in admin
     for old_route in ("security-events", "unknown-faces", "archive", "live", "attempts", "audit"):
         assert old_route in admin or old_route in v3
-    assert "data-view=\"events\"" in v3
+    assert 'data-view="events"' in v3
     assert "startAccessLive" in v3 and "data-access-filter" in v3
     assert "viewPhoto" in admin and "downloadPhoto" in admin
     assert "livenessLabel" in admin and "sessionDevice" in admin
@@ -148,12 +148,8 @@ def test_last_admin_invariant_is_transaction_safe(tmp_path: Path) -> None:
     database = Database(tmp_path / "admin-race.db")
     database.initialize()
     repository = Repository(database)
-    first = repository.create_account(
-        {"external_id": "a1", "login": "a1", "full_name": "A1", "role": "ADMIN"}
-    )
-    second = repository.create_account(
-        {"external_id": "a2", "login": "a2", "full_name": "A2", "role": "ADMIN"}
-    )
+    first = repository.create_account({"external_id": "a1", "login": "a1", "full_name": "A1", "role": "ADMIN"})
+    second = repository.create_account({"external_id": "a2", "login": "a2", "full_name": "A2", "role": "ADMIN"})
 
     def downgrade(user_id: int) -> str:
         try:
@@ -251,10 +247,13 @@ def test_unified_admin_session_routes_and_last_admin_protection(client: TestClie
     )
     assert denied.status_code == 409
     assert denied.json()["detail"]["reason_code"] == "LAST_ACTIVE_ADMIN_REQUIRED"
-    assert client.patch(
-        f"/api/v3/admin/accounts/{admin_id}",
-        json={"role": "USER", "reason": "role change"},
-    ).status_code == 409
+    assert (
+        client.patch(
+            f"/api/v3/admin/accounts/{admin_id}",
+            json={"role": "USER", "reason": "role change"},
+        ).status_code
+        == 409
+    )
 
 
 def test_account_filters_auth_methods_and_user_idor(client: TestClient) -> None:
@@ -299,6 +298,7 @@ def test_create_account_validation_uniqueness_atomicity_and_audit(client: TestCl
         "comment": " Created in regression test ",
         "temporary_password": "Temporary-pass-123",
     }
+    client.cookies.delete("biogate_session")
     assert client.post("/api/v3/admin/accounts", json=payload).status_code == 401
     login = v3_admin_login(client)
     csrf = login.json()["csrf_token"]
@@ -326,13 +326,19 @@ def test_create_account_validation_uniqueness_atomicity_and_audit(client: TestCl
     response = client.post("/api/v3/admin/accounts", json=duplicate_login)
     assert response.status_code == 409
     assert response.json()["detail"]["reason_code"] == "LOGIN_ALREADY_EXISTS"
-    assert client.post("/api/v3/admin/accounts", json={**payload, "login": "other", "employee_id": "OTHER"}).json()[
-        "detail"
-    ]["reason_code"] == "EXTERNAL_ID_ALREADY_EXISTS"
-    assert client.post(
-        "/api/v3/admin/accounts",
-        json={**payload, "external_id": "other-external", "login": "other-login"},
-    ).json()["detail"]["reason_code"] == "EMPLOYEE_ID_ALREADY_EXISTS"
+    assert (
+        client.post("/api/v3/admin/accounts", json={**payload, "login": "other", "employee_id": "OTHER"}).json()[
+            "detail"
+        ]["reason_code"]
+        == "EXTERNAL_ID_ALREADY_EXISTS"
+    )
+    assert (
+        client.post(
+            "/api/v3/admin/accounts",
+            json={**payload, "external_id": "other-external", "login": "other-login"},
+        ).json()["detail"]["reason_code"]
+        == "EMPLOYEE_ID_ALREADY_EXISTS"
+    )
     invalid_password = client.post(
         "/api/v3/admin/accounts",
         json={
@@ -434,9 +440,7 @@ def test_private_evidence_preview_download_archive_and_integrity(client: TestCli
     assert download.headers["content-type"] == "image/jpeg"
     assert download.headers["content-disposition"].startswith("attachment;")
     assert download.headers["content-disposition"].endswith('.jpg"')
-    assert any(
-        row["event_type"] == "EVIDENCE_DOWNLOADED" for row in repository.audit_events(limit=20)
-    )
+    assert any(row["event_type"] == "EVIDENCE_DOWNLOADED" for row in repository.audit_events(limit=20))
 
     with repository.db.write() as conn:
         conn.execute("UPDATE evidence_photos SET created_at=? WHERE id=?", ("2020-01-01T00:00:00+00:00", photo["id"]))
@@ -509,7 +513,7 @@ def test_admin_pagination_and_safe_event_details_rbac(client: TestClient) -> Non
         "SUCCESS",
         {"reason": "visible", "session_id": "hidden", "password_hash": "hidden"},
     )
-    audit_list = client.get("/api/admin/audit", params={"limit": 20})
+    audit_list = client.get("/api/v3/admin/audit-events", params={"limit": 20})
     assert audit_list.status_code == 200
     audit_event = next(row for row in audit_list.json() if row["event_type"] == "SAFE_AUDIT_LIST_TEST")
     assert audit_event["metadata"] == {"reason": "visible"}
@@ -530,12 +534,21 @@ def test_admin_pagination_and_safe_event_details_rbac(client: TestClient) -> Non
 
 
 def test_security_headers_and_sensitive_cache_policy(client: TestClient) -> None:
-    for path in ("/", "/admin/login", "/health"):
+    client.cookies.delete("biogate_session")
+    for path in ("/", "/health"):
         response = client.get(path)
         assert response.headers["x-content-type-options"] == "nosniff"
         assert response.headers["x-frame-options"] == "DENY"
         assert response.headers["referrer-policy"] == "no-referrer"
         assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+        assert "'unsafe-inline'" not in response.headers["content-security-policy"]
+
+    # style-src has no 'unsafe-inline': markup and scripts must not rely on inline styles.
+    root = Path(__file__).parents[1] / "app"
+    for source in [*root.glob("templates/*.html"), *root.glob("static/*.js")]:
+        text = source.read_text(encoding="utf-8")
+        for pattern in ("style=", "<style", "setAttribute('style'", 'setAttribute("style"', "cssText"):
+            assert pattern not in text, f"{source.name} uses {pattern}"
 
     protected = client.get("/api/v3/admin/accounts")
     assert protected.status_code == 401
@@ -546,9 +559,7 @@ def test_security_headers_and_sensitive_cache_policy(client: TestClient) -> None
     }
 
 
-def test_sqlite_operational_error_is_controlled(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_sqlite_operational_error_is_controlled(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     v3_admin_login(client)
 
     def unavailable(*args: object, **kwargs: object) -> list[dict[str, object]]:
@@ -659,17 +670,132 @@ def test_temporary_password_requires_change_and_admin_reset_revokes_sessions(cli
     generated_password = generated_reset.json()["temporary_password"]
     assert isinstance(generated_password, str)
     client.cookies.delete("biogate_session")
-    generated_login = client.post(
-        "/api/v3/auth/password", json={"login": "worker-1", "password": generated_password}
-    )
+    generated_login = client.post("/api/v3/auth/password", json={"login": "worker-1", "password": generated_password})
     assert generated_login.status_code == 200
     assert generated_login.json()["must_change_password"] is True
     with client.app.state.repository.db.connect() as connection:
         metadata = connection.execute(
-            "SELECT metadata FROM audit_events WHERE event_type='PASSWORD_RESET_BY_ADMIN' "
-            "ORDER BY id DESC LIMIT 1"
+            "SELECT metadata FROM audit_events WHERE event_type='PASSWORD_RESET_BY_ADMIN' ORDER BY id DESC LIMIT 1"
         ).fetchone()["metadata"]
     assert generated_password not in metadata
+
+
+@pytest.mark.parametrize("mode", ["TEMPORARY", "PERMANENT"])
+def test_admin_password_reset_lifts_login_throttle(client: TestClient, mode: str) -> None:
+    v3_admin_login(client)
+    created = client.post(
+        "/api/v3/admin/accounts",
+        json={
+            "external_id": "locked-1",
+            "login": "Locked-1",
+            "full_name": "Locked One",
+            "temporary_password": "Temporary-pass-123",
+        },
+    )
+    assert created.status_code == 201
+    user_id = created.json()["id"]
+    client.cookies.delete("biogate_session")
+    for _ in range(5):
+        failed = client.post("/api/v3/auth/password", json={"login": "Locked-1", "password": "Wrong-password-1"})
+        assert failed.json()["detail"]["reason_code"] == "INVALID_CREDENTIALS"
+    throttled = client.post("/api/v3/auth/password", json={"login": "Locked-1", "password": "Temporary-pass-123"})
+    assert throttled.status_code == 429
+
+    v3_admin_login(client)
+    replacement = "Reset-after-lockout-42!"
+    payload: dict[str, object] = {"mode": mode, "reason": "User locked out"}
+    if mode == "TEMPORARY":
+        payload["temporary_password"] = replacement
+    else:
+        payload.update(new_password=replacement, confirmation=replacement)
+    assert client.post(f"/api/v3/admin/accounts/{user_id}/reset-password", json=payload).status_code == 200
+    client.cookies.delete("biogate_session")
+
+    signed_in = client.post("/api/v3/auth/password", json={"login": "Locked-1", "password": replacement})
+    assert signed_in.status_code == 200
+    assert signed_in.json()["must_change_password"] is (mode == "TEMPORARY")
+
+
+def test_admin_password_reset_keeps_throttle_for_other_logins(client: TestClient) -> None:
+    v3_admin_login(client)
+    for login in ("reset-target", "bystander"):
+        created = client.post(
+            "/api/v3/admin/accounts",
+            json={"external_id": login, "login": login, "full_name": login, "temporary_password": "Temporary-pass-123"},
+        )
+        assert created.status_code == 201
+    target_id = client.app.state.repository.get_user_by_login("reset-target")["id"]
+    client.cookies.delete("biogate_session")
+    for _ in range(5):
+        client.post("/api/v3/auth/password", json={"login": "bystander", "password": "Wrong-password-1"})
+    v3_admin_login(client)
+    reset = client.post(
+        f"/api/v3/admin/accounts/{target_id}/reset-password",
+        json={"temporary_password": "Reset-pass-789!", "reason": "Support request"},
+    )
+    assert reset.status_code == 200
+    client.cookies.delete("biogate_session")
+    still_throttled = client.post(
+        "/api/v3/auth/password", json={"login": "bystander", "password": "Temporary-pass-123"}
+    )
+    assert still_throttled.status_code == 429
+
+
+def test_admin_can_create_account_with_permanent_password(client: TestClient) -> None:
+    v3_admin_login(client)
+    created = client.post(
+        "/api/v3/admin/accounts",
+        json={
+            "external_id": "permanent-1",
+            "login": "permanent-1",
+            "full_name": "Permanent One",
+            "password_mode": "PERMANENT",
+            "new_password": "Permanent-pass-456!",
+            "confirmation": "Permanent-pass-456!",
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["must_change_password"] == 0
+    assert "temporary_password" not in body
+    assert "new_password" not in body and "confirmation" not in body
+    client.cookies.delete("biogate_session")
+    signed_in = client.post("/api/v3/auth/password", json={"login": "permanent-1", "password": "Permanent-pass-456!"})
+    assert signed_in.status_code == 200
+    assert signed_in.json()["must_change_password"] is False
+    assert client.get("/api/v3/user/profile").status_code == 200
+
+
+@pytest.mark.parametrize(
+    "password_fields",
+    [
+        {"password_mode": "PERMANENT"},
+        {"password_mode": "PERMANENT", "new_password": "Permanent-pass-456!", "confirmation": "Permanent-pass-457!"},
+        {"password_mode": "PERMANENT", "new_password": "short", "confirmation": "short"},
+        {
+            "password_mode": "PERMANENT",
+            "new_password": "Permanent-pass-456!",
+            "confirmation": "Permanent-pass-456!",
+            "generate_temporary_password": True,
+        },
+        {
+            "password_mode": "TEMPORARY",
+            "temporary_password": "Temporary-pass-123",
+            "new_password": "Permanent-pass-456!",
+        },
+        {"password_mode": "SOMETHING", "temporary_password": "Temporary-pass-123"},
+    ],
+)
+def test_permanent_account_creation_rejects_invalid_password_input(
+    client: TestClient, password_fields: dict[str, object]
+) -> None:
+    v3_admin_login(client)
+    response = client.post(
+        "/api/v3/admin/accounts",
+        json={"external_id": "rejected-1", "login": "rejected-1", "full_name": "Rejected", **password_fields},
+    )
+    assert response.status_code == 422
+    assert client.app.state.repository.get_user_by_login("rejected-1") is None
 
 
 def test_admin_password_reset_reason_is_validated_persisted_and_safely_exposed(client: TestClient) -> None:
@@ -736,7 +862,7 @@ def test_admin_password_reset_reason_is_validated_persisted_and_safely_exposed(c
     assert "reset-pass-456" not in json.dumps(reset_event["metadata"]).lower()
     assert "session" not in json.dumps(reset_event["metadata"]).lower()
 
-    audit_rows = client.get("/api/admin/audit", params={"limit": 100}).json()
+    audit_rows = client.get("/api/v3/admin/audit-events", params={"limit": 100}).json()
     audit_event = next(row for row in audit_rows if row["event_type"] == "PASSWORD_RESET_BY_ADMIN")
     details = client.get(f"/api/v3/admin/events/audit/{audit_event['id']}")
     assert details.status_code == 200
@@ -747,7 +873,8 @@ def test_admin_password_reset_reason_is_validated_persisted_and_safely_exposed(c
     assert "password_hash" not in serialized
 
     security_event = next(
-        row for row in client.get("/api/v3/admin/security-events", params={"limit": 100}).json()
+        row
+        for row in client.get("/api/v3/admin/security-events", params={"limit": 100}).json()
         if row["event_type"] == "PASSWORD_RESET"
     )
     linked_details = client.get(f"/api/v3/admin/events/security/{security_event['id']}")
@@ -792,9 +919,7 @@ def test_access_identity_uses_real_account_fields_for_search_details_and_csv(cli
     repository.add_access_event(
         {"user_id": login_only["id"], "method": "PASSWORD", "result": "DISABLED", "reason": "ACCOUNT_DISABLED"}
     )
-    unknown_event = repository.add_access_event(
-        {"method": "FACE", "result": "UNKNOWN", "reason": "USER_NOT_FOUND"}
-    )
+    unknown_event = repository.add_access_event({"method": "FACE", "result": "UNKNOWN", "reason": "USER_NOT_FOUND"})
 
     for query in ("zamir", " ZAMIR ", "Zamir Zhan", " admin_test ", "Test Administrator"):
         response = client.get("/api/v3/admin/access-events", params={"user": query})

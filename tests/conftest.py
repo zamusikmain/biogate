@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -39,6 +40,11 @@ class FakePipeline:
         quality = QualityResult(True, 0.91, 100.0, 128.0, "OK")
         return FrameResult(np.asarray([1.0, 0.0, 0.0], dtype=np.float32), quality, observation)
 
+    def process_enrollment_frame(self, data: bytes) -> FrameResult:
+        if data == b"turned":
+            raise BiometricError("HEAD_TURNED", "Head turned")
+        return self.process_frame(data)
+
     def analyze_frame(self, data: bytes) -> FrameAnalysis:
         frame = self.process_frame(data)
         return FrameAnalysis(frame.embedding, frame.quality, frame.observation, 0.25, 320, 240)
@@ -72,9 +78,10 @@ def client(tmp_path: Path) -> TestClient:
         session_secret=TEST_SESSION_KEY,
     )
     with TestClient(create_app(settings, FakePipeline())) as test_client:  # type: ignore[arg-type]
+        # The bootstrap ADMIN account signs in through the regular V3 entry point.
         login = test_client.post(
-            "/api/admin/auth/login",
-            json={"username": TEST_ADMIN_NAME, "password": TEST_AUTH_INPUT},
+            "/api/v3/auth/password",
+            json={"login": TEST_ADMIN_NAME, "password": TEST_AUTH_INPUT},
         )
         assert login.status_code == 200
         test_client.headers["X-CSRF-Token"] = login.json()["csrf_token"]
@@ -86,7 +93,57 @@ def images() -> list[tuple[str, tuple[str, bytes, str]]]:
     return [("frames", (f"frame-{index}.jpg", b"face", "image/jpeg")) for index in range(3)]
 
 
+def create_account(
+    client: TestClient, external_id: str, full_name: str | None = None, *, status: str = "ACTIVE"
+) -> int:
+    """Create an account through the admin API; its login equals the External ID."""
+    response = client.post(
+        "/api/v3/admin/accounts",
+        json={
+            "external_id": external_id,
+            "login": external_id,
+            "full_name": full_name or external_id,
+            "status": status,
+            "temporary_password": "Temporary-pass-123",
+        },
+    )
+    assert response.status_code == 201, response.text
+    return int(response.json()["id"])
+
+
+def enroll_photos(client: TestClient, user_id: int, photos: list[tuple[str, tuple[str, bytes, str]]]):  # type: ignore[no-untyped-def]
+    return client.post(f"/api/v3/admin/accounts/{user_id}/enrollment/photos", files=photos)
+
+
+def face_photos(count: int = 3, payload: bytes = b"face") -> list[tuple[str, tuple[str, bytes, str]]]:
+    return [("photos", (f"photo-{index}.jpg", payload, "image/jpeg")) for index in range(count)]
+
+
 @pytest.fixture
-def enrolled(client: TestClient, images: list[tuple[str, tuple[str, bytes, str]]]) -> None:
-    response = client.post("/api/enroll", data={"external_id": "alice", "display_name": "Alice"}, files=images)
-    assert response.status_code == 201
+def enrolled(client: TestClient) -> int:
+    user_id = create_account(client, "alice", "Alice")
+    enrollment = enroll_photos(client, user_id, face_photos())
+    assert enrollment.json()["template_created"] is True
+    return user_id
+
+
+def record_verification(client: TestClient, external_id: str, result: str = "VERIFIED") -> int:
+    """Store a historical 1:1 attempt as the removed V2 /api/verify endpoint used to."""
+    repository = client.app.state.repository
+    user = repository.get_user(external_id)
+    attempt_id: int = repository.add_verification(
+        {
+            "user_id": user["id"] if user else None,
+            "claimed_external_id": external_id,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "face_detected": 1,
+            "quality_score": 0.9,
+            "liveness_score": 0.88,
+            "similarity_score": 0.9,
+            "threshold": 0.363,
+            "result": result,
+            "reason_code": "MATCH" if result == "VERIFIED" else "FACE_MISMATCH",
+            "inference_time_ms": 1.0,
+        }
+    )
+    return attempt_id

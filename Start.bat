@@ -7,19 +7,12 @@ echo ========================================
 echo             BioGate V3
 echo ========================================
 echo.
-echo Login:
-echo http://127.0.0.1:8000/
-echo.
-echo Admin:
-echo http://127.0.0.1:8000/admin
-echo.
-echo Starting BioGate...
+echo First start creates .venv, installs dependencies and asks for an
+echo administrator password. The browser opens when the server is ready.
 echo Press CTRL+C to stop.
-echo ========================================
 echo.
 
-start "" /b cmd /c "timeout /t 5 /nobreak >nul & start "" http://127.0.0.1:8000/"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\run.ps1" -OpenBrowser
 
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
-
-pause
+rem Keep the window open only when startup failed, so the error stays readable.
+if errorlevel 1 pause

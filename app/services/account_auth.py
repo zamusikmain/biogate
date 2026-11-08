@@ -1,7 +1,6 @@
 import hashlib
 import hmac
 import secrets
-import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -9,6 +8,7 @@ from argon2 import PasswordHasher, Type
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
 from app.core.config import Settings
+from app.services.rate_limit import PASSWORD_FAILURES, RateLimitStore
 from app.services.repository import Repository
 
 ACCOUNT_COOKIE_NAME = "biogate_session"
@@ -38,19 +38,21 @@ class AccountAuthService:
         self.repository = repository
         self.settings = settings
         self.hasher = PasswordHasher(type=Type.ID)
-        self._password_failures: dict[str, list[datetime]] = {}
-        self._rate_lock = threading.RLock()
+        self.rate_limits = RateLimitStore(repository.db)
+        self._unknown_login_hash: str | None = None
 
-    def validate_password(self, password: str) -> None:
+    @staticmethod
+    def validate_password(password: str) -> None:
         if len(password) < 12:
             raise AccountAuthError("PASSWORD_TOO_SHORT")
         if len(password) > 1024:
             raise AccountAuthError("PASSWORD_TOO_LONG")
-        if not any("a" <= character <= "z" for character in password):
+        # Any alphabet counts: "Пароль" has an uppercase and lowercase letters just like "Password".
+        if not any(character.islower() for character in password):
             raise AccountAuthError("PASSWORD_LOWERCASE_REQUIRED")
-        if not any("A" <= character <= "Z" for character in password):
+        if not any(character.isupper() for character in password):
             raise AccountAuthError("PASSWORD_UPPERCASE_REQUIRED")
-        if not any("0" <= character <= "9" for character in password):
+        if not any(character.isdigit() for character in password):
             raise AccountAuthError("PASSWORD_DIGIT_REQUIRED")
         if not any(not character.isalnum() and not character.isspace() for character in password):
             raise AccountAuthError("PASSWORD_SPECIAL_REQUIRED")
@@ -60,12 +62,17 @@ class AccountAuthService:
         return self.hasher.hash(password)
 
     def verify_password(self, password_hash: str | None, password: str) -> bool:
-        if not password_hash:
-            return False
+        # Unknown logins and accounts without a password still pay for one Argon2 verification,
+        # so the response time does not reveal whether a login exists.
         try:
-            return bool(self.hasher.verify(password_hash, password))
+            return bool(self.hasher.verify(password_hash or self._dummy_hash(), password)) and bool(password_hash)
         except (VerifyMismatchError, VerificationError, InvalidHashError):
             return False
+
+    def _dummy_hash(self) -> str:
+        if self._unknown_login_hash is None:
+            self._unknown_login_hash = self.hasher.hash(secrets.token_urlsafe(32))
+        return self._unknown_login_hash
 
     def password_login(
         self, login: str, password: str, *, client_address: str = "", user_agent: str = ""
@@ -86,8 +93,6 @@ class AccountAuthService:
             raise AccountAuthError("LOGIN_RATE_LIMITED")
         user = self.repository.get_user_by_login(login)
         now = datetime.now(UTC)
-        if user and not bool(user.get("password_enabled", 1)):
-            self._denied_status(user, "PASSWORD_DISABLED", client_address, user_agent)
         if user and user.get("locked_until") and datetime.fromisoformat(str(user["locked_until"])) > now:
             raise AccountAuthError("LOGIN_RATE_LIMITED")
         valid = self.verify_password(str(user.get("password_hash")) if user else None, password)
@@ -126,13 +131,16 @@ class AccountAuthService:
                 event_id,
             )
             raise AccountAuthError("INVALID_CREDENTIALS")
+        # Account-specific refusals come only after a correct password, so a wrong guess never
+        # tells the caller that the login exists.
+        if not bool(user.get("password_enabled", 1)):
+            self._denied_status(user, "PASSWORD_DISABLED", client_address, user_agent)
         if user["status"] == "BLOCKED":
             self._denied_status(user, "BLOCKED", client_address, user_agent)
         if user["status"] == "DISABLED":
             self._denied_status(user, "DISABLED", client_address, user_agent)
         session, cookie = self.create_session(user, "PASSWORD", client_address, user_agent)
-        with self._rate_lock:
-            self._password_failures.pop(rate_key, None)
+        self.rate_limits.clear(PASSWORD_FAILURES, rate_key)
         self.repository.record_login_success(int(str(user["id"])), "PASSWORD")
         event_id = self.repository.add_access_event(
             {
@@ -281,6 +289,7 @@ class AccountAuthService:
             {"reason": reason, "admin_id": admin_id, "administrator": administrator, "mode": mode},
         )
         self.repository.revoke_user_sessions(user_id, "PASSWORD_RESET_BY_ADMIN")
+        self._clear_user_password_failures(user_id)
         self.repository.add_security_event(
             "PASSWORD_RESET",
             "WARNING",
@@ -323,8 +332,14 @@ class AccountAuthService:
         user_id = int(row["user_id"])
         self.repository.set_password_hash(user_id, password_hash, False, "PASSWORD_SELF_SERVICE_RESET")
         self.repository.revoke_user_sessions(user_id, "PASSWORD_SELF_SERVICE_RESET")
+        self._clear_user_password_failures(user_id)
         self.repository.add_security_event("PASSWORD_RESET", "INFO", user_id, {"method": "BIOMETRIC"})
         self.repository.add_notification(user_id, None, "PASSWORD_RESET", "PASSWORD_SELF_SERVICE_RESET")
+
+    def _clear_user_password_failures(self, user_id: int) -> None:
+        user = self.repository.get_user_by_id(user_id)
+        if user and user.get("login"):
+            self.clear_password_failures(str(user["login"]))
 
     @staticmethod
     def _token_hash(token: str) -> str:
@@ -340,18 +355,27 @@ class AccountAuthService:
     def _rate_key(self, login: str, client_address: str) -> str:
         material = f"{client_address}|{login.casefold()}"
         secret = self.settings.session_secret.get_secret_value()
-        return hmac.new(secret.encode(), material.encode(), hashlib.sha256).hexdigest()
+        digest = hmac.new(secret.encode(), material.encode(), hashlib.sha256).hexdigest()
+        return f"{self._login_rate_prefix(login)}{digest}"
+
+    def _login_rate_prefix(self, login: str) -> str:
+        secret = self.settings.session_secret.get_secret_value()
+        return hmac.new(secret.encode(), f"login|{login.casefold()}".encode(), hashlib.sha256).hexdigest() + ":"
+
+    def clear_password_failures(self, login: str) -> None:
+        """Forget failed attempts for a login on every client address.
+
+        A new password makes earlier failures irrelevant; without this the user stays
+        throttled after an admin reset and cannot sign in with the new password.
+        """
+        self.rate_limits.clear_prefix(PASSWORD_FAILURES, self._login_rate_prefix(login))
 
     def _password_rate_limited(self, key: str) -> bool:
-        now = datetime.now(UTC)
-        cutoff = now - timedelta(seconds=self.settings.password_login_window_seconds)
-        with self._rate_lock:
-            recent = [attempt for attempt in self._password_failures.get(key, []) if attempt >= cutoff]
-            self._password_failures[key] = recent
-            if len(recent) < self.settings.password_login_max_attempts:
-                return False
-            return (now - recent[-1]).total_seconds() < self.settings.password_login_cooldown_seconds
+        now = datetime.now(UTC).timestamp()
+        recent = self.rate_limits.stats(PASSWORD_FAILURES, key, self.settings.password_login_window_seconds, now)
+        if recent.count < self.settings.password_login_max_attempts or recent.last is None:
+            return False
+        return (now - recent.last) < self.settings.password_login_cooldown_seconds
 
     def _record_password_failure(self, key: str, now: datetime) -> None:
-        with self._rate_lock:
-            self._password_failures.setdefault(key, []).append(now)
+        self.rate_limits.record(PASSWORD_FAILURES, key, now.timestamp())

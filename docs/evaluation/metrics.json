@@ -1,0 +1,1043 @@
+{
+  "generated_at": "2026-10-24T22:13:16+00:00",
+  "protocol": {
+    "dataset": "LFW, original (unaligned) images, View 2 pairs.txt",
+    "pairs_file_sha256": "ea42330c62c92989f9d7c03237ed5d591365e89b3e649747777b70e692dc1592",
+    "pairs": 6000,
+    "folds": 10,
+    "limited_smoke_run": false,
+    "face_selection": "YuNet (production settings); with several faces the one closest to the image centre",
+    "alignment": "OpenCV FaceRecognizerSF.alignCrop, 112x112 five-point template",
+    "score": "cosine similarity of L2-normalised embeddings; accept when score >= threshold",
+    "threshold_selection": "lowest threshold with FAR <= target; cross-validated over the 10 folds",
+    "policies": {
+      "acquired_pairs": "only pairs where YuNet found a face in both images",
+      "all_pairs": "every pair; a missing face counts as a reject (score -inf)",
+      "production_gate": "every pair; a missing face or an image failing the enrollment quality gate counts as a reject"
+    },
+    "seed": "none needed: pairs, folds and processing are deterministic"
+  },
+  "environment": {
+    "python": "3.12.14",
+    "opencv": "4.10.0",
+    "numpy": "2.2.5",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel"
+  },
+  "acquisition": {
+    "images": 7701,
+    "status": {
+      "OK": 7700,
+      "NO_FACE": 1
+    },
+    "multiple_faces_central_face_used": 973,
+    "enrollment_quality_gate_rejections": {
+      "IMAGE_BLURRY": 298,
+      "FACE_TOO_SMALL": 226
+    },
+    "pairs_with_missing_face": 1,
+    "genuine_pairs_with_missing_face": 1
+  },
+  "models": {
+    "sface": {
+      "model": "SFace (OpenCV Zoo, 2021dec)",
+      "model_file": "face_recognition_sface_2021dec.onnx",
+      "model_bytes": 38696353,
+      "model_sha256": "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79",
+      "embedding_ms": {
+        "count": 7700,
+        "median": 16.67305000592023,
+        "p95": 20.32072498623165,
+        "note": "alignment excluded; one aligned 112x112 crop -> normalised embedding, single thread CPU"
+      },
+      "policies": {
+        "acquired_pairs": {
+          "pairs": 5999,
+          "genuine_pairs": 2999,
+          "impostor_pairs": 3000,
+          "eer": 0.00800133377792598,
+          "eer_threshold": 0.3000029921531677,
+          "production_threshold": {
+            "threshold": 0.363,
+            "far": 0.0006666666666666666,
+            "frr": 0.01533844614871624
+          },
+          "far_targets": {
+            "far_0.01": {
+              "threshold_on_all_pairs": 0.2948691248893738,
+              "far_on_all_pairs": 0.009666666666666712,
+              "frr_on_all_pairs": 0.00766922307435812,
+              "cross_validated": {
+                "target_far": 0.01,
+                "folds": [
+                  {
+                    "fold": 0,
+                    "threshold": 0.29842835664749146,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.013333333333333334
+                  },
+                  {
+                    "fold": 1,
+                    "threshold": 0.29591134190559387,
+                    "far": 0.006666666666666667,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 2,
+                    "threshold": 0.291847825050354,
+                    "far": 0.02,
+                    "frr": 0.006666666666666667
+                  },
+                  {
+                    "fold": 3,
+                    "threshold": 0.2926773428916931,
+                    "far": 0.013333333333333334,
+                    "frr": 0.016722408026755852
+                  },
+                  {
+                    "fold": 4,
+                    "threshold": 0.2984515130519867,
+                    "far": 0.0,
+                    "frr": 0.016666666666666666
+                  },
+                  {
+                    "fold": 5,
+                    "threshold": 0.2919157147407532,
+                    "far": 0.016666666666666666,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 6,
+                    "threshold": 0.2948691248893738,
+                    "far": 0.01,
+                    "frr": 0.013333333333333334
+                  },
+                  {
+                    "fold": 7,
+                    "threshold": 0.29842835664749146,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.006666666666666667
+                  },
+                  {
+                    "fold": 8,
+                    "threshold": 0.29591134190559387,
+                    "far": 0.006666666666666667,
+                    "frr": 0.0033333333333333335
+                  },
+                  {
+                    "fold": 9,
+                    "threshold": 0.2926773428916931,
+                    "far": 0.013333333333333334,
+                    "frr": 0.0
+                  }
+                ],
+                "far_mean": 0.009333333333333334,
+                "far_std": 0.0064406118871953065,
+                "frr_mean": 0.007672240802675584,
+                "frr_std": 0.006866500598349779
+              }
+            },
+            "far_0.001": {
+              "threshold_on_all_pairs": 0.3640971779823303,
+              "far_on_all_pairs": 0.0006666666666667043,
+              "frr_on_all_pairs": 0.01533844614871624,
+              "cross_validated": {
+                "target_far": 0.001,
+                "folds": [
+                  {
+                    "fold": 0,
+                    "threshold": 0.3640971779823303,
+                    "far": 0.0,
+                    "frr": 0.02
+                  },
+                  {
+                    "fold": 1,
+                    "threshold": 0.3640971779823303,
+                    "far": 0.0,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 2,
+                    "threshold": 0.3640971779823303,
+                    "far": 0.0,
+                    "frr": 0.02
+                  },
+                  {
+                    "fold": 3,
+                    "threshold": 0.3640971779823303,
+                    "far": 0.0,
+                    "frr": 0.030100334448160536
+                  },
+                  {
+                    "fold": 4,
+                    "threshold": 0.36484548449516296,
+                    "far": 0.0,
+                    "frr": 0.02666666666666667
+                  },
+                  {
+                    "fold": 5,
+                    "threshold": 0.33673858642578125,
+                    "far": 0.006666666666666667,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 6,
+                    "threshold": 0.3442734479904175,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.02666666666666667
+                  },
+                  {
+                    "fold": 7,
+                    "threshold": 0.3640971779823303,
+                    "far": 0.0,
+                    "frr": 0.006666666666666667
+                  },
+                  {
+                    "fold": 8,
+                    "threshold": 0.3640971779823303,
+                    "far": 0.0,
+                    "frr": 0.0033333333333333335
+                  },
+                  {
+                    "fold": 9,
+                    "threshold": 0.3640971779823303,
+                    "far": 0.0,
+                    "frr": 0.013333333333333334
+                  }
+                ],
+                "far_mean": 0.001,
+                "far_std": 0.002249828525701843,
+                "frr_mean": 0.014676700111482721,
+                "frr_std": 0.01158317950891966
+              }
+            }
+          }
+        },
+        "all_pairs": {
+          "pairs": 6000,
+          "genuine_pairs": 3000,
+          "impostor_pairs": 3000,
+          "eer": 0.008333333333333318,
+          "eer_threshold": 0.2987314462661743,
+          "production_threshold": {
+            "threshold": 0.363,
+            "far": 0.0006666666666666666,
+            "frr": 0.015666666666666666
+          },
+          "far_targets": {
+            "far_0.01": {
+              "threshold_on_all_pairs": 0.2948691248893738,
+              "far_on_all_pairs": 0.009666666666666712,
+              "frr_on_all_pairs": 0.008,
+              "cross_validated": {
+                "target_far": 0.01,
+                "folds": [
+                  {
+                    "fold": 0,
+                    "threshold": 0.29842835664749146,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.013333333333333334
+                  },
+                  {
+                    "fold": 1,
+                    "threshold": 0.29591134190559387,
+                    "far": 0.006666666666666667,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 2,
+                    "threshold": 0.291847825050354,
+                    "far": 0.02,
+                    "frr": 0.006666666666666667
+                  },
+                  {
+                    "fold": 3,
+                    "threshold": 0.2926773428916931,
+                    "far": 0.013333333333333334,
+                    "frr": 0.02
+                  },
+                  {
+                    "fold": 4,
+                    "threshold": 0.2984515130519867,
+                    "far": 0.0,
+                    "frr": 0.016666666666666666
+                  },
+                  {
+                    "fold": 5,
+                    "threshold": 0.2919157147407532,
+                    "far": 0.016666666666666666,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 6,
+                    "threshold": 0.2948691248893738,
+                    "far": 0.01,
+                    "frr": 0.013333333333333334
+                  },
+                  {
+                    "fold": 7,
+                    "threshold": 0.29842835664749146,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.006666666666666667
+                  },
+                  {
+                    "fold": 8,
+                    "threshold": 0.29591134190559387,
+                    "far": 0.006666666666666667,
+                    "frr": 0.0033333333333333335
+                  },
+                  {
+                    "fold": 9,
+                    "threshold": 0.2926773428916931,
+                    "far": 0.013333333333333334,
+                    "frr": 0.0
+                  }
+                ],
+                "far_mean": 0.009333333333333334,
+                "far_std": 0.0064406118871953065,
+                "frr_mean": 0.007999999999999998,
+                "frr_std": 0.007403702777314525
+              }
+            },
+            "far_0.001": {
+              "threshold_on_all_pairs": 0.3640971779823303,
+              "far_on_all_pairs": 0.0006666666666667043,
+              "frr_on_all_pairs": 0.015666666666666666,
+              "cross_validated": {
+                "target_far": 0.001,
+                "folds": [
+                  {
+                    "fold": 0,
+                    "threshold": 0.3640971779823303,
+                    "far": 0.0,
+                    "frr": 0.02
+                  },
+                  {
+                    "fold": 1,
+                    "threshold": 0.3640971779823303,
+                    "far": 0.0,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 2,
+                    "threshold": 0.3640971779823303,
+                    "far": 0.0,
+                    "frr": 0.02
+                  },
+                  {
+                    "fold": 3,
+                    "threshold": 0.3640971779823303,
+                    "far": 0.0,
+                    "frr": 0.03333333333333333
+                  },
+                  {
+                    "fold": 4,
+                    "threshold": 0.36484548449516296,
+                    "far": 0.0,
+                    "frr": 0.02666666666666667
+                  },
+                  {
+                    "fold": 5,
+                    "threshold": 0.33673858642578125,
+                    "far": 0.006666666666666667,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 6,
+                    "threshold": 0.3442734479904175,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.02666666666666667
+                  },
+                  {
+                    "fold": 7,
+                    "threshold": 0.3640971779823303,
+                    "far": 0.0,
+                    "frr": 0.006666666666666667
+                  },
+                  {
+                    "fold": 8,
+                    "threshold": 0.3640971779823303,
+                    "far": 0.0,
+                    "frr": 0.0033333333333333335
+                  },
+                  {
+                    "fold": 9,
+                    "threshold": 0.3640971779823303,
+                    "far": 0.0,
+                    "frr": 0.013333333333333334
+                  }
+                ],
+                "far_mean": 0.001,
+                "far_std": 0.002249828525701843,
+                "frr_mean": 0.015,
+                "frr_std": 0.012095300587265134
+              }
+            }
+          }
+        },
+        "production_gate": {
+          "pairs": 6000,
+          "genuine_pairs": 3000,
+          "impostor_pairs": 3000,
+          "eer": 0.12433333333333332,
+          "eer_threshold": 0.18203797936439514,
+          "production_threshold": {
+            "threshold": 0.363,
+            "far": 0.0003333333333333333,
+            "frr": 0.13433333333333333
+          },
+          "far_targets": {
+            "far_0.01": {
+              "threshold_on_all_pairs": 0.2896522283554077,
+              "far_on_all_pairs": 0.009666666666666712,
+              "frr_on_all_pairs": 0.128,
+              "cross_validated": {
+                "target_far": 0.01,
+                "folds": [
+                  {
+                    "fold": 0,
+                    "threshold": 0.2899293899536133,
+                    "far": 0.006666666666666667,
+                    "frr": 0.14333333333333334
+                  },
+                  {
+                    "fold": 1,
+                    "threshold": 0.2902456820011139,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.12666666666666668
+                  },
+                  {
+                    "fold": 2,
+                    "threshold": 0.28141921758651733,
+                    "far": 0.023333333333333334,
+                    "frr": 0.1
+                  },
+                  {
+                    "fold": 3,
+                    "threshold": 0.28855979442596436,
+                    "far": 0.013333333333333334,
+                    "frr": 0.15
+                  },
+                  {
+                    "fold": 4,
+                    "threshold": 0.2899293899536133,
+                    "far": 0.006666666666666667,
+                    "frr": 0.11333333333333333
+                  },
+                  {
+                    "fold": 5,
+                    "threshold": 0.28855979442596436,
+                    "far": 0.013333333333333334,
+                    "frr": 0.15666666666666668
+                  },
+                  {
+                    "fold": 6,
+                    "threshold": 0.2899293899536133,
+                    "far": 0.006666666666666667,
+                    "frr": 0.10666666666666667
+                  },
+                  {
+                    "fold": 7,
+                    "threshold": 0.2902456820011139,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.14
+                  },
+                  {
+                    "fold": 8,
+                    "threshold": 0.2896522283554077,
+                    "far": 0.01,
+                    "frr": 0.12333333333333334
+                  },
+                  {
+                    "fold": 9,
+                    "threshold": 0.28855979442596436,
+                    "far": 0.013333333333333334,
+                    "frr": 0.12
+                  }
+                ],
+                "far_mean": 0.009999999999999998,
+                "far_std": 0.006085806194501846,
+                "frr_mean": 0.12799999999999997,
+                "frr_std": 0.018934585248125153
+              }
+            },
+            "far_0.001": {
+              "threshold_on_all_pairs": 0.33673858642578125,
+              "far_on_all_pairs": 0.0006666666666667043,
+              "frr_on_all_pairs": 0.131,
+              "cross_validated": {
+                "target_far": 0.001,
+                "folds": [
+                  {
+                    "fold": 0,
+                    "threshold": 0.33673858642578125,
+                    "far": 0.0,
+                    "frr": 0.14333333333333334
+                  },
+                  {
+                    "fold": 1,
+                    "threshold": 0.33673858642578125,
+                    "far": 0.0,
+                    "frr": 0.12666666666666668
+                  },
+                  {
+                    "fold": 2,
+                    "threshold": 0.3342674970626831,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.11
+                  },
+                  {
+                    "fold": 3,
+                    "threshold": 0.33673858642578125,
+                    "far": 0.0,
+                    "frr": 0.15666666666666668
+                  },
+                  {
+                    "fold": 4,
+                    "threshold": 0.33673858642578125,
+                    "far": 0.0,
+                    "frr": 0.12
+                  },
+                  {
+                    "fold": 5,
+                    "threshold": 0.3342674970626831,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.15666666666666668
+                  },
+                  {
+                    "fold": 6,
+                    "threshold": 0.34389805793762207,
+                    "far": 0.0,
+                    "frr": 0.11333333333333333
+                  },
+                  {
+                    "fold": 7,
+                    "threshold": 0.33673858642578125,
+                    "far": 0.0,
+                    "frr": 0.14
+                  },
+                  {
+                    "fold": 8,
+                    "threshold": 0.33673858642578125,
+                    "far": 0.0,
+                    "frr": 0.12333333333333334
+                  },
+                  {
+                    "fold": 9,
+                    "threshold": 0.3342674970626831,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.12
+                  }
+                ],
+                "far_mean": 0.001,
+                "far_std": 0.0016101529717988266,
+                "frr_mean": 0.131,
+                "frr_std": 0.017072828748672015
+              }
+            }
+          }
+        }
+      }
+    },
+    "arcface": {
+      "model": "ArcFace LResNet100E-IR (ONNX Model Zoo, opset 8)",
+      "model_file": "arcfaceresnet100-8.onnx",
+      "model_bytes": 261036388,
+      "model_sha256": "f3a6bc281e72f88862f5748b53be3d76b3b48f8f1ab1f4a537941bdc4e1b01da",
+      "embedding_ms": {
+        "count": 7700,
+        "median": 197.31450000108453,
+        "p95": 247.33080499572677,
+        "note": "alignment excluded; one aligned 112x112 crop -> normalised embedding, single thread CPU"
+      },
+      "policies": {
+        "acquired_pairs": {
+          "pairs": 5999,
+          "genuine_pairs": 2999,
+          "impostor_pairs": 3000,
+          "eer": 0.003000500166722242,
+          "eer_threshold": 0.22753489017486572,
+          "production_threshold": {
+            "threshold": 0.363,
+            "far": 0.0,
+            "frr": 0.009336445481827277
+          },
+          "far_targets": {
+            "far_0.01": {
+              "threshold_on_all_pairs": 0.20136892795562744,
+              "far_on_all_pairs": 0.009666666666666712,
+              "frr_on_all_pairs": 0.0030010003334444814,
+              "cross_validated": {
+                "target_far": 0.01,
+                "folds": [
+                  {
+                    "fold": 0,
+                    "threshold": 0.20136892795562744,
+                    "far": 0.01,
+                    "frr": 0.006666666666666667
+                  },
+                  {
+                    "fold": 1,
+                    "threshold": 0.20136892795562744,
+                    "far": 0.01,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 2,
+                    "threshold": 0.19708967208862305,
+                    "far": 0.013333333333333334,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 3,
+                    "threshold": 0.20177611708641052,
+                    "far": 0.006666666666666667,
+                    "frr": 0.0033444816053511705
+                  },
+                  {
+                    "fold": 4,
+                    "threshold": 0.20177611708641052,
+                    "far": 0.006666666666666667,
+                    "frr": 0.01
+                  },
+                  {
+                    "fold": 5,
+                    "threshold": 0.19708967208862305,
+                    "far": 0.013333333333333334,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 6,
+                    "threshold": 0.20264384150505066,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.006666666666666667
+                  },
+                  {
+                    "fold": 7,
+                    "threshold": 0.19708967208862305,
+                    "far": 0.013333333333333334,
+                    "frr": 0.0033333333333333335
+                  },
+                  {
+                    "fold": 8,
+                    "threshold": 0.20264384150505066,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 9,
+                    "threshold": 0.19708967208862305,
+                    "far": 0.013333333333333334,
+                    "frr": 0.0
+                  }
+                ],
+                "far_mean": 0.009333333333333332,
+                "far_std": 0.004097575314352394,
+                "frr_mean": 0.003001114827201784,
+                "frr_std": 0.0036684640314143652
+              }
+            },
+            "far_0.001": {
+              "threshold_on_all_pairs": 0.2583305239677429,
+              "far_on_all_pairs": 0.0006666666666667043,
+              "frr_on_all_pairs": 0.004334778259419807,
+              "cross_validated": {
+                "target_far": 0.001,
+                "folds": [
+                  {
+                    "fold": 0,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.01
+                  },
+                  {
+                    "fold": 1,
+                    "threshold": 0.2572024464607239,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 2,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 3,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.006688963210702341
+                  },
+                  {
+                    "fold": 4,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.013333333333333334
+                  },
+                  {
+                    "fold": 5,
+                    "threshold": 0.2477467656135559,
+                    "far": 0.006666666666666667,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 6,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.006666666666666667
+                  },
+                  {
+                    "fold": 7,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.006666666666666667
+                  },
+                  {
+                    "fold": 8,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 9,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.0
+                  }
+                ],
+                "far_mean": 0.001,
+                "far_std": 0.002249828525701843,
+                "frr_mean": 0.004335562987736901,
+                "frr_std": 0.004982612336855425
+              }
+            }
+          }
+        },
+        "all_pairs": {
+          "pairs": 6000,
+          "genuine_pairs": 3000,
+          "impostor_pairs": 3000,
+          "eer": 0.0033333333333333166,
+          "eer_threshold": 0.22727179527282715,
+          "production_threshold": {
+            "threshold": 0.363,
+            "far": 0.0,
+            "frr": 0.009666666666666667
+          },
+          "far_targets": {
+            "far_0.01": {
+              "threshold_on_all_pairs": 0.20136892795562744,
+              "far_on_all_pairs": 0.009666666666666712,
+              "frr_on_all_pairs": 0.0033333333333333335,
+              "cross_validated": {
+                "target_far": 0.01,
+                "folds": [
+                  {
+                    "fold": 0,
+                    "threshold": 0.20136892795562744,
+                    "far": 0.01,
+                    "frr": 0.006666666666666667
+                  },
+                  {
+                    "fold": 1,
+                    "threshold": 0.20136892795562744,
+                    "far": 0.01,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 2,
+                    "threshold": 0.19708967208862305,
+                    "far": 0.013333333333333334,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 3,
+                    "threshold": 0.20177611708641052,
+                    "far": 0.006666666666666667,
+                    "frr": 0.006666666666666667
+                  },
+                  {
+                    "fold": 4,
+                    "threshold": 0.20177611708641052,
+                    "far": 0.006666666666666667,
+                    "frr": 0.01
+                  },
+                  {
+                    "fold": 5,
+                    "threshold": 0.19708967208862305,
+                    "far": 0.013333333333333334,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 6,
+                    "threshold": 0.20264384150505066,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.006666666666666667
+                  },
+                  {
+                    "fold": 7,
+                    "threshold": 0.19708967208862305,
+                    "far": 0.013333333333333334,
+                    "frr": 0.0033333333333333335
+                  },
+                  {
+                    "fold": 8,
+                    "threshold": 0.20264384150505066,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 9,
+                    "threshold": 0.19708967208862305,
+                    "far": 0.013333333333333334,
+                    "frr": 0.0
+                  }
+                ],
+                "far_mean": 0.009333333333333332,
+                "far_std": 0.004097575314352394,
+                "frr_mean": 0.003333333333333333,
+                "frr_std": 0.0038490017945975053
+              }
+            },
+            "far_0.001": {
+              "threshold_on_all_pairs": 0.2583305239677429,
+              "far_on_all_pairs": 0.0006666666666667043,
+              "frr_on_all_pairs": 0.004666666666666667,
+              "cross_validated": {
+                "target_far": 0.001,
+                "folds": [
+                  {
+                    "fold": 0,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.01
+                  },
+                  {
+                    "fold": 1,
+                    "threshold": 0.2572024464607239,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 2,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 3,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.01
+                  },
+                  {
+                    "fold": 4,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.013333333333333334
+                  },
+                  {
+                    "fold": 5,
+                    "threshold": 0.2477467656135559,
+                    "far": 0.006666666666666667,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 6,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.006666666666666667
+                  },
+                  {
+                    "fold": 7,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.006666666666666667
+                  },
+                  {
+                    "fold": 8,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.0
+                  },
+                  {
+                    "fold": 9,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.0
+                  }
+                ],
+                "far_mean": 0.001,
+                "far_std": 0.002249828525701843,
+                "frr_mean": 0.004666666666666667,
+                "frr_std": 0.0052587375849774375
+              }
+            }
+          }
+        },
+        "production_gate": {
+          "pairs": 6000,
+          "genuine_pairs": 3000,
+          "impostor_pairs": 3000,
+          "eer": 0.12433333333333332,
+          "eer_threshold": 0.08719395101070404,
+          "production_threshold": {
+            "threshold": 0.363,
+            "far": 0.0,
+            "frr": 0.12966666666666668
+          },
+          "far_targets": {
+            "far_0.01": {
+              "threshold_on_all_pairs": 0.19016578793525696,
+              "far_on_all_pairs": 0.009666666666666712,
+              "frr_on_all_pairs": 0.12533333333333332,
+              "cross_validated": {
+                "target_far": 0.01,
+                "folds": [
+                  {
+                    "fold": 0,
+                    "threshold": 0.19079536199569702,
+                    "far": 0.006666666666666667,
+                    "frr": 0.14333333333333334
+                  },
+                  {
+                    "fold": 1,
+                    "threshold": 0.19016578793525696,
+                    "far": 0.01,
+                    "frr": 0.12666666666666668
+                  },
+                  {
+                    "fold": 2,
+                    "threshold": 0.19079536199569702,
+                    "far": 0.006666666666666667,
+                    "frr": 0.09333333333333334
+                  },
+                  {
+                    "fold": 3,
+                    "threshold": 0.19079536199569702,
+                    "far": 0.006666666666666667,
+                    "frr": 0.14333333333333334
+                  },
+                  {
+                    "fold": 4,
+                    "threshold": 0.19079536199569702,
+                    "far": 0.006666666666666667,
+                    "frr": 0.10666666666666667
+                  },
+                  {
+                    "fold": 5,
+                    "threshold": 0.1893743872642517,
+                    "far": 0.013333333333333334,
+                    "frr": 0.15666666666666668
+                  },
+                  {
+                    "fold": 6,
+                    "threshold": 0.19079536199569702,
+                    "far": 0.006666666666666667,
+                    "frr": 0.10333333333333333
+                  },
+                  {
+                    "fold": 7,
+                    "threshold": 0.1893743872642517,
+                    "far": 0.013333333333333334,
+                    "frr": 0.14
+                  },
+                  {
+                    "fold": 8,
+                    "threshold": 0.19163459539413452,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.12
+                  },
+                  {
+                    "fold": 9,
+                    "threshold": 0.18753212690353394,
+                    "far": 0.02,
+                    "frr": 0.12
+                  }
+                ],
+                "far_mean": 0.009333333333333334,
+                "far_std": 0.004919098582484145,
+                "frr_mean": 0.12533333333333335,
+                "frr_std": 0.020439612955674525
+              }
+            },
+            "far_0.001": {
+              "threshold_on_all_pairs": 0.2583305239677429,
+              "far_on_all_pairs": 0.0006666666666667043,
+              "frr_on_all_pairs": 0.126,
+              "cross_validated": {
+                "target_far": 0.001,
+                "folds": [
+                  {
+                    "fold": 0,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.14333333333333334
+                  },
+                  {
+                    "fold": 1,
+                    "threshold": 0.2572024464607239,
+                    "far": 0.0033333333333333335,
+                    "frr": 0.12666666666666668
+                  },
+                  {
+                    "fold": 2,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.09333333333333334
+                  },
+                  {
+                    "fold": 3,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.14666666666666667
+                  },
+                  {
+                    "fold": 4,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.11
+                  },
+                  {
+                    "fold": 5,
+                    "threshold": 0.2477467656135559,
+                    "far": 0.006666666666666667,
+                    "frr": 0.15666666666666668
+                  },
+                  {
+                    "fold": 6,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.10333333333333333
+                  },
+                  {
+                    "fold": 7,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.14
+                  },
+                  {
+                    "fold": 8,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.12
+                  },
+                  {
+                    "fold": 9,
+                    "threshold": 0.2583305239677429,
+                    "far": 0.0,
+                    "frr": 0.12
+                  }
+                ],
+                "far_mean": 0.001,
+                "far_std": 0.002249828525701843,
+                "frr_mean": 0.12600000000000003,
+                "frr_std": 0.020475821332959013
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
