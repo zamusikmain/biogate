@@ -196,7 +196,7 @@ class EventsRepository(RepositoryBase):
             params.append(user_id)
         if search and search.strip():
             term = f"%{search.strip().casefold()}%"
-            sql += " AND (LOWER(COALESCE(u.full_name,'')) LIKE ? OR LOWER(COALESCE(u.login,'')) LIKE ?)"
+            sql += " AND (casefold(COALESCE(u.full_name,'')) LIKE ? OR casefold(COALESCE(u.login,'')) LIKE ?)"
             params.extend((term, term))
         if method:
             sql += " AND ae.method=?"

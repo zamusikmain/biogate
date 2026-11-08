@@ -45,6 +45,19 @@ def test_slow_frame_analysis_does_not_block_other_requests(client: TestClient) -
         pipeline.process_enrollment_frame = original
 
 
+def test_admin_search_finds_cyrillic_names_in_any_case(client: TestClient) -> None:
+    user_id = create_account(client, "anna.s", "Анна Соколова")
+    client.app.state.repository.add_access_event(  # type: ignore[attr-defined]
+        {"user_id": user_id, "method": "FACE", "result": "SUCCESS", "reason": "IDENTIFIED"}
+    )
+    for term in ("анна", "АННА", "Соколова", "anna.S"):
+        accounts = client.get("/api/v3/admin/accounts", params={"search": term}).json()
+        assert [row["id"] for row in accounts] == [user_id], term
+        events = client.get("/api/v3/admin/access-events", params={"user": term}).json()
+        assert [row["user_id"] for row in events] == [user_id], term
+    assert client.get("/api/v3/admin/accounts", params={"search": "петров"}).json() == []
+
+
 def test_invalid_stored_runtime_setting_is_ignored(tmp_path: Path) -> None:
     settings = Settings(_env_file=None, db_path=tmp_path / "biogate.db", **_dirs(tmp_path))  # type: ignore[call-arg]
     database = Database(settings.db_path)

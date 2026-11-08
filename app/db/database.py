@@ -280,6 +280,12 @@ MIGRATION_COLUMNS: dict[str, dict[str, str]] = {
 }
 
 
+def _casefold(value: object) -> str | None:
+    if value is None:
+        return None
+    return value.casefold() if isinstance(value, str) else str(value).casefold()
+
+
 class Database:
     def __init__(self, path: Path):
         self.path = path
@@ -327,6 +333,8 @@ class Database:
     def connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.path, timeout=10, check_same_thread=False)
         connection.row_factory = sqlite3.Row
+        # SQLite's LOWER() and LIKE only fold ASCII; searches for Cyrillic names need Unicode casefolding.
+        connection.create_function("casefold", 1, _casefold, deterministic=True)
         connection.execute("PRAGMA foreign_keys = ON")
         try:
             yield connection

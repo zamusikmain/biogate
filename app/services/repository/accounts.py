@@ -116,8 +116,10 @@ class AccountsRepository(RepositoryBase):
         conditions = ["1=1"]
         params: list[Any] = []
         if search:
-            conditions.append("(u.full_name LIKE ? OR u.login LIKE ? OR u.employee_id LIKE ?)")
-            term = f"%{search}%"
+            conditions.append(
+                "(casefold(u.full_name) LIKE ? OR casefold(u.login) LIKE ? OR casefold(u.employee_id) LIKE ?)"
+            )
+            term = f"%{search.strip().casefold()}%"
             params.extend([term, term, term])
         if status:
             conditions.append("u.status=?")
