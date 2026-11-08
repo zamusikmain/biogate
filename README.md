@@ -28,14 +28,12 @@
 
 ## Screenshots
 
-<!-- Add PNG screenshots (the only images allowed by .gitignore) and the GIF to docs/img/, then uncomment:
 ![Unified login with face guidance](docs/img/login.png)
 ![Liveness challenge in progress](docs/img/liveness.png)
 ![ADMIN console: user card](docs/img/admin-user.png)
-![Face login demo](docs/img/face-login.gif)
--->
 
-_Screenshots and a short face-login GIF will be added here._
+_Captured from the UI test harness: the camera shows a synthetic test video, not a person, and every account is
+fictional. A short face-login GIF can go to `docs/img/face-login.gif` later._
 
 ## Overview
 
