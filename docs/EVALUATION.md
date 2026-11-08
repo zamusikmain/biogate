@@ -107,14 +107,22 @@ The threshold in code stays 0.363 until the owner decides otherwise.
 - The production quality gate rejects 524 of 7,700 LFW images (low-resolution JPEGs). The "gate" column shows
   that on such images the gate, not the recognition model, dominates the error.
 - The benchmark keeps images with several faces by choosing the central one; production rejects them.
+- The LFW errata list seven View 2 "matched" pairs that actually show two different people (folds 1, 5 and 7).
+  As the authors ask, the benchmark uses the labels as published, so a few of the genuine pairs counted as
+  false rejects may be correct rejects.
+
+Please cite LFW as: Gary B. Huang, Manu Ramesh, Tamara Berg and Erik Learned-Miller. *Labeled Faces in the
+Wild: A Database for Studying Face Recognition in Unconstrained Environments.* University of Massachusetts,
+Amherst, Technical Report 07-49, October 2007.
 
 ## Licences
 
 | Item | Licence / terms | Consequence |
 |---|---|---|
-| LFW images | No open licence was found. The images are news photographs whose copyright stays with the original owners; LFW is distributed for research. The primary terms page (`vis-www.cs.umass.edu/lfw/`) could not be reached from this machine, so the exact wording was **not verified** (see `docs/MANUAL_TODO.md`). | Used only as a local research benchmark; images are not committed or redistributed, only the download script, hashes and aggregate results. |
+| LFW images | The official page states no licence or terms of use (checked 2026-11-08 through the Internet Archive copy of `vis-www.cs.umass.edu/lfw/` dated 2025-01-05; the site itself still did not load). It asks users to cite the technical report below and carries a disclaimer: LFW is a public research benchmark, and no LFW result "should … be used to conclude that an algorithm is suitable for any commercial purpose". The images are news photographs whose copyright stays with the original owners. | Used only as a local research benchmark; images are not committed or redistributed, only the download script, hashes and aggregate results. The numbers above are not a suitability claim (see Limitations). |
 | YuNet | MIT (OpenCV Zoo) | used in production |
 | SFace | Apache-2.0 (OpenCV Zoo) | used in production |
+| MediaPipe Face Landmarker (`face_landmarker.task`, float16 v1) | Apache-2.0, the licence of the MediaPipe project that publishes it. The model card PDF (Face Mesh V2) is served only as a download and was not read. | used in production for blink geometry only, not for recognition |
 | ArcFace LResNet100E-IR (`arcfaceresnet100-8.onnx`, ONNX Model Zoo commit `4c46cd00`) | The ONNX Model Zoo page lists Apache-2.0, but the weights are InsightFace's model trained on MS1M (MS-Celeb-1M refined). InsightFace states that its training data and pretrained models are "available for non-commercial research purposes only", and MS-Celeb-1M itself was withdrawn by Microsoft in 2019. | Treated as **non-commercial, local comparison only**. The weights (SHA-256 `f3a6bc28…4e1b01da`) are never committed; `--arcface-model` points to a local file. |
 
 ## Recommendation on the model
