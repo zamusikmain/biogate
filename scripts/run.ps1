@@ -82,6 +82,9 @@ $serverArgs = @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port"
 if ($BehindProxy) {
     # Only the proxy on this machine may set the client address.
     $serverArgs += @("--proxy-headers", "--forwarded-allow-ips", "127.0.0.1")
-    Write-Host "Expecting a local HTTPS reverse proxy in front (see docs/NETWORK.md)."
+    # Clients reach BioGate only over HTTPS here, so the session cookie must never travel in clear text.
+    # Environment variables override .env, so a forgotten setting there cannot weaken this.
+    $env:BIOGATE_ADMIN_COOKIE_SECURE = "true"
+    Write-Host "Expecting a local HTTPS reverse proxy in front (see docs/NETWORK.md). Session cookies are HTTPS-only."
 }
 & $venvPython @serverArgs

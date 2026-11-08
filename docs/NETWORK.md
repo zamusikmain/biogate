@@ -24,13 +24,11 @@ terminal browser ──HTTPS──▶ reverse proxy (TLS, port 443) ──HTTP�
   access events see each terminal's own address. Without this, every request looks
   like it came from `127.0.0.1` and one terminal's failed logins lock out all others.
 
-## 1. Settings in `.env`
+## 1. Session cookie over HTTPS only
 
-```
-BIOGATE_ADMIN_COOKIE_SECURE=true
-```
-
-The session cookie is then sent only over HTTPS. Keep the other values as they are.
+`run.ps1 -BehindProxy` (step 2) sets `BIOGATE_ADMIN_COOKIE_SECURE=true` for the server
+process, overriding `.env`, so the session cookie is sent only over HTTPS. Starting
+uvicorn by hand behind the proxy, put `BIOGATE_ADMIN_COOKIE_SECURE=true` in `.env`.
 With this setting the console no longer works over plain `http://127.0.0.1:8000/`;
 use the HTTPS address on the server PC as well.
 
