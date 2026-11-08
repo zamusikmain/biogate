@@ -1,4 +1,3 @@
-import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -13,7 +12,6 @@ from app.db.database import Database
 from app.services.biometric_workflow import BiometricWorkflowError, BiometricWorkflowService
 from app.services.biometrics.embedding import deserialize_embedding, serialize_embedding
 from app.services.biometrics.models import FaceObservation, FrameAnalysis, QualityResult
-from app.services.challenges import ChallengeService, EphemeralCapture
 from app.services.face_login import FaceLoginService, FaceLoginState
 from app.services.identification import IdentificationService
 from app.services.repository import Repository
@@ -63,11 +61,16 @@ def _verify_one_to_one(
     external_id: str,
     probe: np.ndarray,
 ) -> dict[str, Any]:
-    service = ChallengeService(repository, settings, identification)
-    session = service.create(external_id)
-    sequence = json.loads(session["expected_sequence"])
-    capture = EphemeralCapture(embeddings=[probe for _ in sequence], quality_scores=[0.95 for _ in sequence])
-    return service._finalize(session, sequence, capture, _analysis(probe))
+    """1:1 decision against the account's active template, the way targeted recovery scores."""
+    user = repository.get_user(external_id)
+    assert user is not None
+    template = repository.get_template(int(user["id"]))
+    assert template is not None
+    similarity = identification.identity_score(probe, template)
+    return {
+        "similarity_score": similarity,
+        "result": "VERIFIED" if similarity >= settings.verification_threshold else "REJECTED",
+    }
 
 
 def _recover(
@@ -77,8 +80,7 @@ def _recover(
     user_id: int | None,
     probe: np.ndarray,
 ) -> dict[str, Any]:
-    challenge = ChallengeService(repository, settings, identification)
-    service = FaceLoginService(repository, settings, challenge, identification)
+    service = FaceLoginService(repository, settings, identification)
     state = FaceLoginState(
         id="recovery-state",
         mode="RECOVERY",

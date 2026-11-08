@@ -14,7 +14,7 @@ from numpy.typing import NDArray
 from app.core.config import Settings
 from app.services.biometrics.embedding import aggregate
 from app.services.biometrics.models import FrameAnalysis
-from app.services.challenges import BlinkStateMachine, ChallengeService, EphemeralCapture
+from app.services.challenges import BlinkStateMachine, EphemeralCapture, evaluate_pose
 from app.services.identification import IdentificationService
 from app.services.rate_limit import FACE_CHALLENGE_STARTS, RECOVERY_STARTS, RateLimitStore
 from app.services.repository import Repository
@@ -41,12 +41,10 @@ class FaceLoginService:
         self,
         repository: Repository,
         settings: Settings,
-        challenge_service: ChallengeService,
         identification: IdentificationService,
     ):
         self.repository = repository
         self.settings = settings
-        self.challenge_service = challenge_service
         self.identification = identification
         self.blink = BlinkStateMachine()
         self._states: dict[str, FaceLoginState] = {}
@@ -162,7 +160,7 @@ class FaceLoginService:
                 accepted = blink_complete and self._cooldown_elapsed(state, now)
                 feedback = f"BLINK_{state.blink_phase}"
             else:
-                pose = self.challenge_service._evaluate_pose(state.capture, action, analysis.observation.yaw_proxy)
+                pose = evaluate_pose(state.capture, action, analysis.observation.yaw_proxy, self.settings)
                 detected, yaw_delta = pose.detected_pose, pose.yaw_delta
                 if state.capture.stability_step != state.index:
                     state.capture.stability_step, state.capture.stability_count = state.index, 0

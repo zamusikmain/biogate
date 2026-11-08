@@ -1,17 +1,16 @@
-import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
-import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.db.database import Database
-from app.services.biometrics.embedding import serialize_embedding
 from app.services.biometrics.models import FaceObservation, FrameAnalysis, QualityResult
-from app.services.challenges import BlinkStateMachine, BlinkTemporalState, ChallengeService, EphemeralCapture
+from app.services.challenges import BlinkStateMachine, BlinkTemporalState, EphemeralCapture, evaluate_pose
+from app.services.face_login import FaceLoginService
+from app.services.identification import IdentificationService
 from app.services.maintenance import cleanup_expired_attempt_snapshots
 from app.services.repository import Repository
 from tests.conftest import create_account, enroll_photos, record_verification
@@ -91,36 +90,34 @@ def test_head_turn_invalidates_blink_progress() -> None:
     assert completed is False
 
 
-def test_pose_direction_noise_natural_turn_and_fixed_baseline(tmp_path: Path) -> None:
-    database = Database(tmp_path / "pose-temporal.db")
+def face_login_service(tmp_path: Path) -> FaceLoginService:
+    settings = Settings(_env_file=None, db_path=tmp_path / "face-login.db", challenge_cooldown_ms=200)  # type: ignore[call-arg]
+    database = Database(settings.db_path)
     database.initialize()
     repository = Repository(database)
-    service = ChallengeService(repository, Settings(db_path=database.path))
+    return FaceLoginService(repository, settings, IdentificationService(repository, settings))
+
+
+def test_pose_direction_noise_natural_turn_and_fixed_baseline() -> None:
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
     capture = EphemeralCapture()
     for yaw in (0.01, 0.0, -0.01):
-        service._evaluate_pose(capture, "CENTER", yaw)
+        evaluate_pose(capture, "CENTER", yaw, settings)
     baseline = capture.baseline_yaw
     assert baseline is not None
-    assert service._evaluate_pose(capture, "TURN_LEFT", baseline + 0.04).matches is False
-    assert service._evaluate_pose(capture, "TURN_LEFT", baseline + 0.18).matches is True
-    assert service._evaluate_pose(capture, "TURN_RIGHT", baseline + 0.18).matches is False
-    assert service._evaluate_pose(capture, "TURN_RIGHT", baseline - 0.18).matches is True
+    assert evaluate_pose(capture, "TURN_LEFT", baseline + 0.04, settings).matches is False
+    assert evaluate_pose(capture, "TURN_LEFT", baseline + 0.18, settings).matches is True
+    assert evaluate_pose(capture, "TURN_RIGHT", baseline + 0.18, settings).matches is False
+    assert evaluate_pose(capture, "TURN_RIGHT", baseline - 0.18, settings).matches is True
     assert capture.baseline_yaw == baseline
 
 
 def test_auto_capture_requires_stability(tmp_path: Path) -> None:
-    database = Database(tmp_path / "test.db")
-    database.initialize()
-    repository = Repository(database)
-    repository.create_user("alice", "Alice")
-    repository.upsert_template(
-        "alice", "test", "1", serialize_embedding(np.asarray([1.0, 0.0], dtype=np.float32)), 2, 3
-    )
-    service = ChallengeService(repository, Settings(db_path=tmp_path / "test.db", challenge_cooldown_ms=200))
-    session = service.create("alice")
-    first = service.analyze(session["id"], analysis(), b"frame")
-    second = service.analyze(session["id"], analysis(), b"frame")
-    third = service.analyze(session["id"], analysis(), b"frame")
+    service = face_login_service(tmp_path)
+    challenge_id = service.create(client_address="test")["challenge_id"]
+    first = service.analyze(challenge_id, analysis(), b"frame")
+    second = service.analyze(challenge_id, analysis(), b"frame")
+    third = service.analyze(challenge_id, analysis(), b"frame")
     assert first["accepted"] is False
     assert second["accepted"] is False
     assert third["accepted"] is True
@@ -128,15 +125,8 @@ def test_auto_capture_requires_stability(tmp_path: Path) -> None:
 
 
 def test_embedding_is_extracted_only_for_an_accepted_challenge_frame(tmp_path: Path) -> None:
-    database = Database(tmp_path / "lazy-embedding.db")
-    database.initialize()
-    repository = Repository(database)
-    repository.create_user("alice", "Alice")
-    repository.upsert_template(
-        "alice", "test", "1", serialize_embedding(np.asarray([1.0, 0.0], dtype=np.float32)), 2, 1
-    )
-    service = ChallengeService(repository, Settings(db_path=database.path, challenge_cooldown_ms=200))
-    session = service.create("alice")
+    service = face_login_service(tmp_path)
+    challenge_id = service.create(client_address="test")["challenge_id"]
     extractions = 0
 
     def extract() -> np.ndarray:
@@ -144,75 +134,12 @@ def test_embedding_is_extracted_only_for_an_accepted_challenge_frame(tmp_path: P
         extractions += 1
         return np.asarray([1.0, 0.0], dtype=np.float32)
 
-    service.analyze(session["id"], analysis(), b"frame", embedding_factory=extract)
-    service.analyze(session["id"], analysis(), b"frame", embedding_factory=extract)
+    service.analyze(challenge_id, analysis(), b"frame", embedding_factory=extract)
+    service.analyze(challenge_id, analysis(), b"frame", embedding_factory=extract)
     assert extractions == 0
-    result = service.analyze(session["id"], analysis(), b"frame", embedding_factory=extract)
+    result = service.analyze(challenge_id, analysis(), b"frame", embedding_factory=extract)
     assert result["accepted"] is True
     assert extractions == 1
-
-
-def test_automatic_verification_session_completes(tmp_path: Path) -> None:
-    database = Database(tmp_path / "complete.db")
-    database.initialize()
-    repository = Repository(database)
-    repository.create_user("alice", "Alice")
-    repository.upsert_template(
-        "alice", "test", "1", serialize_embedding(np.asarray([1.0, 0.0, 0.0], dtype=np.float32)), 3, 3
-    )
-    service = ChallengeService(repository, Settings(db_path=database.path, challenge_cooldown_ms=200))
-    session = service.create("alice")
-    sequence = json.loads(session["expected_sequence"])
-    result = None
-    for action in sequence:
-        if action == "BLINK":
-            for ear in (0.25, 0.25, 0.12, 0.25, 0.25):
-                result = service.analyze(session["id"], analysis(ear=ear), b"frame")
-        else:
-            yaw = {"CENTER": 0.0, "TURN_LEFT": 0.22, "TURN_RIGHT": -0.22}[action]
-            frame_count = 3 if action == "CENTER" else 2
-            for _ in range(frame_count):
-                result = service.analyze(session["id"], analysis(yaw=yaw), b"frame")
-        with database.write() as connection:
-            connection.execute(
-                "UPDATE verification_sessions SET last_capture_at=? WHERE id=?",
-                ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(), session["id"]),
-            )
-    assert result is not None and result["completed"] is True
-    assert result["result"] == "VERIFIED"
-    assert repository.get_session(session["id"])["state"] == "COMPLETED"
-    assert repository.verifications()[0]["reason_code"] == "MATCH"
-
-
-def test_invalid_challenge_sequence_is_rejected(tmp_path: Path) -> None:
-    database = Database(tmp_path / "invalid-sequence.db")
-    database.initialize()
-    repository = Repository(database)
-    repository.create_user("alice", "Alice")
-    repository.upsert_template(
-        "alice", "test", "1", serialize_embedding(np.asarray([1.0, 0.0, 0.0], dtype=np.float32)), 3, 3
-    )
-    service = ChallengeService(repository, Settings(db_path=database.path))
-    session = service.create("alice")
-    with database.write() as connection:
-        connection.execute("UPDATE verification_sessions SET current_step=99 WHERE id=?", (session["id"],))
-    try:
-        service.analyze(session["id"], analysis(), b"frame")
-        raise AssertionError("Invalid sequence must fail")
-    except ValueError as error:
-        assert str(error) == "INVALID_CHALLENGE_SEQUENCE"
-    assert repository.verifications()[0]["reason_code"] == "INVALID_CHALLENGE_SEQUENCE"
-
-
-def test_blocked_account_cannot_start_a_verification_challenge(client: TestClient) -> None:
-    user_id = create_account(client, "blocked", status="BLOCKED")
-    client.app.state.repository.upsert_template(
-        "blocked", "test", "1", serialize_embedding(np.asarray([1.0, 0.0, 0.0], dtype=np.float32)), 3, 3
-    )
-    service = ChallengeService(client.app.state.repository, client.app.state.settings)
-    with pytest.raises(PermissionError):
-        service.create("blocked")
-    assert client.get(f"/api/v3/admin/accounts/{user_id}").json()["status"] == "BLOCKED"
 
 
 def test_admin_photo_enrollment_with_per_file_results(client: TestClient) -> None:

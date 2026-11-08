@@ -8,22 +8,22 @@ from app.core.config import Settings
 from app.db.database import Database
 from app.services.biometrics.detection import FaceDetector
 from app.services.biometrics.embedding import select_representatives, serialize_embedding
-from app.services.challenges import ChallengeService, EphemeralCapture
+from app.services.challenges import EphemeralCapture, PoseEvaluation, evaluate_pose
+from app.services.face_login import FaceLoginService
 from app.services.identification import IdentificationService
 from app.services.repository import Repository
 from tests.conftest import create_account, enroll_photos, face_photos, record_verification
 from tests.test_v2 import analysis
 
+POSE_SETTINGS = Settings(_env_file=None)  # type: ignore[call-arg]
 
-def make_challenge(tmp_path: Path, *, debug: bool = False) -> tuple[ChallengeService, Repository]:
-    database = Database(tmp_path / "head-pose.db")
+
+def make_face_login(tmp_path: Path, *, debug: bool = False) -> FaceLoginService:
+    settings = Settings(_env_file=None, db_path=tmp_path / "head-pose.db", debug=debug)  # type: ignore[call-arg]
+    database = Database(settings.db_path)
     database.initialize()
     repository = Repository(database)
-    repository.create_user("pose", "Pose User")
-    repository.upsert_template(
-        "pose", "test", "1", serialize_embedding(np.asarray([1.0, 0.0, 0.0], dtype=np.float32)), 3, 3
-    )
-    return ChallengeService(repository, Settings(db_path=database.path, debug=debug)), repository
+    return FaceLoginService(repository, settings, IdentificationService(repository, settings))
 
 
 def test_legacy_centroid_is_migrated_to_one_representative_sample(tmp_path: Path) -> None:
@@ -112,39 +112,40 @@ def test_active_representatives_score_but_pending_samples_are_isolated(tmp_path:
     assert len(repository.biometric_request_samples("pending-request")) == 1
 
 
-def calibrated(service: ChallengeService, baseline: float = -0.08) -> EphemeralCapture:
+def pose(capture: EphemeralCapture, action: str, yaw: float) -> PoseEvaluation:
+    return evaluate_pose(capture, action, yaw, POSE_SETTINGS)
+
+
+def calibrated(baseline: float = -0.08) -> EphemeralCapture:
     capture = EphemeralCapture()
     for yaw in (baseline - 0.01, baseline, baseline + 0.01):
-        service._evaluate_pose(capture, "CENTER", yaw)
+        pose(capture, "CENTER", yaw)
     assert capture.baseline_yaw is not None
     return capture
 
 
-def test_center_baseline_calibration_and_dead_zone(tmp_path: Path) -> None:
-    service, _ = make_challenge(tmp_path)
-    capture = calibrated(service)
+def test_center_baseline_calibration_and_dead_zone() -> None:
+    capture = calibrated()
     assert abs(capture.baseline_yaw - (-0.08)) < 1e-6
-    assert service._evaluate_pose(capture, "CENTER", -0.03).detected_pose == "CENTER"
-    assert service._evaluate_pose(capture, "TURN_LEFT", -0.13).matches is False
-    assert service._evaluate_pose(capture, "TURN_RIGHT", -0.02).matches is False
+    assert pose(capture, "CENTER", -0.03).detected_pose == "CENTER"
+    assert pose(capture, "TURN_LEFT", -0.13).matches is False
+    assert pose(capture, "TURN_RIGHT", -0.02).matches is False
 
 
-def test_physical_left_and_right_are_symmetric_and_not_swapped(tmp_path: Path) -> None:
-    service, _ = make_challenge(tmp_path)
-    capture = calibrated(service)
+def test_physical_left_and_right_are_symmetric_and_not_swapped() -> None:
+    capture = calibrated()
     # Positive image-space delta is physical LEFT; negative is physical RIGHT.
-    left = service._evaluate_pose(capture, "TURN_LEFT", 0.09)
-    right = service._evaluate_pose(capture, "TURN_RIGHT", -0.25)
+    left = pose(capture, "TURN_LEFT", 0.09)
+    right = pose(capture, "TURN_RIGHT", -0.25)
     assert left.detected_pose == "TURN_LEFT" and left.matches is True
     assert right.detected_pose == "TURN_RIGHT" and right.matches is True
-    assert service._evaluate_pose(capture, "TURN_RIGHT", 0.09).matches is False
-    assert service._evaluate_pose(capture, "TURN_LEFT", -0.25).matches is False
+    assert pose(capture, "TURN_RIGHT", 0.09).matches is False
+    assert pose(capture, "TURN_LEFT", -0.25).matches is False
 
 
-def test_physical_left_regression_uses_delta_not_absolute_zero(tmp_path: Path) -> None:
-    service, _ = make_challenge(tmp_path)
-    capture = calibrated(service, baseline=-0.09)
-    evaluation = service._evaluate_pose(capture, "TURN_LEFT", 0.08)
+def test_physical_left_regression_uses_delta_not_absolute_zero() -> None:
+    capture = calibrated(baseline=-0.09)
+    evaluation = pose(capture, "TURN_LEFT", 0.08)
     assert 0.08 < 0.16  # The old absolute algorithm rejected this turn.
     assert evaluation.yaw_delta is not None and evaluation.yaw_delta >= 0.16
     assert evaluation.matches is True
@@ -159,17 +160,16 @@ def test_yunet_yaw_sign_uses_original_image_coordinates() -> None:
     assert FaceDetector.yaw_from_yunet_landmarks(raw) > 0
 
 
-def test_yaw_delta_semantics_are_physical_and_baseline_relative(tmp_path: Path) -> None:
-    service, _ = make_challenge(tmp_path)
-    capture = calibrated(service, baseline=0.04)
-    physical_left = service._evaluate_pose(capture, "TURN_LEFT", 0.22)
-    physical_right = service._evaluate_pose(capture, "TURN_RIGHT", -0.14)
+def test_yaw_delta_semantics_are_physical_and_baseline_relative() -> None:
+    capture = calibrated(baseline=0.04)
+    physical_left = pose(capture, "TURN_LEFT", 0.22)
+    physical_right = pose(capture, "TURN_RIGHT", -0.14)
     assert physical_left.yaw_delta is not None and physical_left.yaw_delta >= 0.16
     assert physical_right.yaw_delta is not None and physical_right.yaw_delta <= -0.16
     assert physical_left.detected_pose == "TURN_LEFT" and physical_left.matches is True
     assert physical_right.detected_pose == "TURN_RIGHT" and physical_right.matches is True
-    assert service._evaluate_pose(capture, "TURN_LEFT", -0.14).matches is False
-    assert service._evaluate_pose(capture, "TURN_RIGHT", 0.22).matches is False
+    assert pose(capture, "TURN_LEFT", -0.14).matches is False
+    assert pose(capture, "TURN_RIGHT", 0.22).matches is False
 
 
 def test_mirrored_preview_does_not_mirror_backend_frame() -> None:
@@ -189,39 +189,35 @@ def test_ru_and_en_labels_share_physical_direction_mapping() -> None:
 
 
 def test_head_pose_debug_is_development_only(tmp_path: Path) -> None:
-    service, repository = make_challenge(tmp_path, debug=True)
-    session = service.create("pose")
+    service = make_face_login(tmp_path, debug=True)
+    challenge_id = service.create(client_address="debug")["challenge_id"]
     response = None
     for yaw in (-0.09, -0.08, -0.07):
-        response = service.analyze(session["id"], analysis(yaw=yaw), b"frame")
+        response = service.analyze(challenge_id, analysis(yaw=yaw), b"frame")
     assert response is not None
     assert response["debug"]["expectedPose"] == "CENTER"
     assert response["debug"]["detectedPose"] == "CENTER"
     assert response["debug"]["baselineYaw"] is not None
     assert "embedding" not in json.dumps(response)
 
-    production = ChallengeService(repository, Settings(db_path=repository.db.path, debug=False))
-    production_session = production.create("pose")
-    production_response = production.analyze(production_session["id"], analysis(yaw=-0.08), b"frame")
+    production = make_face_login(tmp_path / "production", debug=False)
+    production_id = production.create(client_address="production")["challenge_id"]
+    production_response = production.analyze(production_id, analysis(yaw=-0.08), b"frame")
     assert "debug" not in production_response
 
 
 def test_head_pose_debug_reports_physical_left(tmp_path: Path) -> None:
-    service, repository = make_challenge(tmp_path, debug=True)
-    session = service.create("pose")
-    with repository.db.write() as connection:
-        connection.execute(
-            "UPDATE verification_sessions SET expected_sequence=? WHERE id=?",
-            (json.dumps(["CENTER", "TURN_LEFT"]), session["id"]),
-        )
+    service = make_face_login(tmp_path, debug=True)
+    challenge_id = service.create(client_address="debug")["challenge_id"]
+    service._states[challenge_id].sequence = ["CENTER", "TURN_LEFT"]
     for _ in range(3):
-        response = service.analyze(session["id"], analysis(yaw=0.0), b"frame")
+        response = service.analyze(challenge_id, analysis(yaw=0.0), b"frame")
     assert response["expected_action"] == "TURN_LEFT"
-    response = service.analyze(session["id"], analysis(yaw=-0.22), b"frame")
+    response = service.analyze(challenge_id, analysis(yaw=-0.22), b"frame")
     assert response["debug"]["expectedPose"] == "TURN_LEFT"
     assert response["debug"]["detectedPose"] == "TURN_RIGHT"
-    assert response["debug"]["poseAccepted"] is False
-    response = service.analyze(session["id"], analysis(yaw=0.22), b"frame")
+    assert response["accepted"] is False
+    response = service.analyze(challenge_id, analysis(yaw=0.22), b"frame")
     assert response["debug"]["expectedPose"] == "TURN_LEFT"
     assert response["debug"]["detectedPose"] == "TURN_LEFT"
     assert response["debug"]["yawDelta"] is not None and response["debug"]["yawDelta"] > 0

@@ -347,40 +347,6 @@ class Repository:
             ).fetchone()
         return dict(row) if row else {}
 
-    def create_session(
-        self, session_id: str, user_id: int, external_id: str, created_at: str, expires_at: str, sequence: list[str]
-    ) -> dict[str, Any]:
-        with self.db.write() as conn:
-            conn.execute(
-                """INSERT INTO verification_sessions(
-                   id,user_id,claimed_external_id,created_at,expires_at,expected_sequence
-                   ) VALUES(?,?,?,?,?,?)""",
-                (session_id, user_id, external_id, created_at, expires_at, json.dumps(sequence)),
-            )
-        return self.get_session(session_id) or {}
-
-    def get_session(self, session_id: str) -> dict[str, Any] | None:
-        with self.db.connect() as conn:
-            row = conn.execute("SELECT * FROM verification_sessions WHERE id=?", (session_id,)).fetchone()
-        return dict(row) if row else None
-
-    def update_session_progress(
-        self, session_id: str, current_step: int, blink_phase: str, last_capture_at: str | None, state: str = "ACTIVE"
-    ) -> None:
-        with self.db.write() as conn:
-            conn.execute(
-                """UPDATE verification_sessions SET current_step=?,blink_phase=?,
-                   last_capture_at=COALESCE(?,last_capture_at),state=? WHERE id=?""",
-                (current_step, blink_phase, last_capture_at, state, session_id),
-            )
-
-    def finish_session(self, session_id: str, state: str, result: str, reason_code: str) -> None:
-        with self.db.write() as conn:
-            conn.execute(
-                "UPDATE verification_sessions SET state=?,result=?,reason_code=?,completed_at=? WHERE id=?",
-                (state, result, reason_code, utc_now(), session_id),
-            )
-
     def get_setting(self, key: str) -> str | None:
         with self.db.connect() as conn:
             row = conn.execute("SELECT value FROM app_settings WHERE key=?", (key,)).fetchone()

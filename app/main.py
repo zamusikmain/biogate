@@ -28,7 +28,6 @@ from app.db.database import Database
 from app.services.account_auth import ACCOUNT_COOKIE_NAME, AccountAuthService
 from app.services.biometric_workflow import BiometricWorkflowService
 from app.services.biometrics.pipeline import BiometricPipeline
-from app.services.challenges import ChallengeService
 from app.services.face_login import FaceLoginService
 from app.services.identification import IdentificationService
 from app.services.maintenance import maintenance_loop, run_maintenance
@@ -92,11 +91,9 @@ def create_app(settings: Settings | None = None, pipeline: BiometricPipeline | N
         app.state.backup_service = BackupService(app.state.repository, config)
         app.state.biometric_workflow = BiometricWorkflowService(app.state.repository, app.state.identification_service)
         app.state.pipeline = pipeline or BiometricPipeline(config)
-        app.state.challenge_service = ChallengeService(app.state.repository, config, app.state.identification_service)
         app.state.face_login_service = FaceLoginService(
             app.state.repository,
             config,
-            app.state.challenge_service,
             app.state.identification_service,
         )
         await asyncio.to_thread(run_maintenance, app.state.repository, app.state.evidence_storage, config)
