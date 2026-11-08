@@ -172,7 +172,7 @@ async function loadDashboard() {
   const recentWithPhotos = data.recent_access.some(event => event.photo_id);
   table('recent-events', [L.t('date'), ...(recentWithPhotos ? [L.t('photo')] : []), L.t('user'), L.t('method'), L.t('result')], data.recent_access.map(event => [date(event.timestamp), ...(recentWithPhotos ? [event.photo_id ? evidenceThumbnail(event.photo_id) : '—'] : []), accountIdentityCell(event), esc(humanMethod(event.method)), badge(event.result)]));bindEvidenceErrors();document.querySelectorAll('[data-access-photo]').forEach(button=>button.onclick=()=>openPhotoViewer([button.dataset.accessPhoto],0));
   const health = await api('/api/v3/admin/system-health');
-  $('system-health').innerHTML = `<div class="metric-grid">${Object.entries(health.components).map(([name, value]) => `<div class="metric-card"><span>${esc(name)}</span><strong>${badge(value)}</strong></div>`).join('')}</div><p>${L.t('activeStorage')}: ${health.storage.active.files} · ${Math.round(health.storage.active.size_bytes / 1024)} KB &nbsp; ${L.t('archive')}: ${health.storage.archive.files} · ${Math.round(health.storage.archive.size_bytes / 1024)} KB &nbsp; ${L.t('freeDisk')}: ${(health.disk.free_bytes / 1073741824).toFixed(1)} GB</p>`;
+  $('system-health').innerHTML = `<div class="metric-grid">${Object.entries(health.components).map(([name, value]) => { const label = L.t(`health_${name}`); return `<div class="metric-card"><span>${esc(label === `health_${name}` ? name : label)}</span><strong>${badge(value)}</strong></div>`; }).join('')}</div><p>${L.t('activeStorage')}: ${health.storage.active.files} · ${Math.round(health.storage.active.size_bytes / 1024)} KB &nbsp; ${L.t('archive')}: ${health.storage.archive.files} · ${Math.round(health.storage.archive.size_bytes / 1024)} KB &nbsp; ${L.t('freeDisk')}: ${(health.disk.free_bytes / 1073741824).toFixed(1)} GB</p>`;
 }
 
 async function loadUsers() {
@@ -188,7 +188,7 @@ async function loadUsers() {
   if (biometric) query.set('biometric', biometric);
   const users = await api(`/api/v3/admin/accounts?${query}`);
   table('users-list', [L.t('displayName'), L.t('role'), L.t('status'), L.t('biometrics'), L.t('actions')], users.map(user => [
-    accountIdentityCell(user), badge(user.role), badge(user.status), user.biometric_template_id ? badge('ENROLLED') : badge('NOT_ENROLLED'),
+    `<span class="identity-with-avatar"><span class="avatar" aria-hidden="true">${esc(initials(user))}</span>${accountIdentityCell(user)}</span>`, badge(user.role), badge(user.status), user.biometric_template_id ? badge('ENROLLED') : badge('NOT_ENROLLED'),
     `<button data-open-account="${user.id}">${L.t('details')}</button>`,
   ]));
   renderAdminPager('users-list', usersPage, users.length, page => { usersPage = page; loadUsers(); });
@@ -200,6 +200,12 @@ async function loadUsers() {
     if (row) { row.classList.add('clickable-row'); row.onclick = open; }
   });
   localizePresentationOptions();
+}
+
+function initials(user) {
+  const words = String(user.full_name || '').trim().split(/\s+/).filter(Boolean);
+  const letters = words.length ? words.slice(0, 2).map(word => word[0]) : [String(user.login || '?')[0]];
+  return letters.join('').toUpperCase();
 }
 
 async function changeAccountStatus(id, nextStatus) {
@@ -467,7 +473,7 @@ function bindEventDialogLocale() { const dialog=$('event-detail-dialog'); let lo
 let activeEventDetailKey = null;
 async function openEventDetails(key) { activeEventDetailKey=key; let row=eventDetailRows.get(key); if(!row)return; if(row._category&&row.id!=null) row=await api(`/api/v3/admin/events/${row._category}/${row.id}`); const allowed=['full_name','login','role','timestamp','event_type','method','result','reason','similarity','liveness_score','client_address','user_agent','severity','reviewed_at','note']; const metadata=eventMetadataDetails(row); const risk=row.risk?.reason_code?`<div><dt>${esc(L.t('risk'))}</dt><dd>${esc(humanCode(row.risk.risk_level,'securityEvent'))}</dd></div><div><dt>${esc(L.t('riskReason'))}</dt><dd>${esc(humanCode(row.risk.reason_code,'securityEvent'))}</dd></div>`:''; $('event-detail-content').innerHTML=`<dl class="event-details">${allowed.filter(name=>row[name]!=null&&row[name]!=='').map(name=>`<div><dt>${esc(eventLabel(name))}</dt><dd>${esc(eventValue(name,row[name],row))}</dd></div>`).join('')}${risk}${metadata}</dl><div class="detail-actions">${row.photo_id?`<button type="button" class="secondary-button" data-single-photo="${esc(row.photo_id)}">${L.t('viewPhoto')}</button><a class="secondary-button" href="/api/v3/photos/${encodeURIComponent(row.photo_id)}/download" download>${L.t('downloadPhoto')}</a>`:`<span>${L.t('photoAbsent')}</span>`}</div>`; const photoButton=$('event-detail-content').querySelector('[data-single-photo]');if(photoButton)photoButton.onclick=()=>openPhotoViewer([photoButton.dataset.singlePhoto],0); bindEventDialogLocale(); if (!$('event-detail-dialog').open) $('event-detail-dialog').showModal(); }
 function field(label, value) { return `<div class="profile-field"><span>${label}</span><strong>${esc(value)}</strong></div>`; }
-function badge(value) { const good = ['ACTIVE', 'VERIFIED', 'SUCCESS', 'ENROLLED', 'APPROVED', 'IDENTIFIED'].includes(value); const bad=['BLOCKED','REJECTED','DISABLED','DENIED','FAILED','UNKNOWN'].includes(value); return `<span class="badge ${good ? 'good' : bad ? 'bad' : ''}">${esc(humanCode(value,'status'))}</span>`; }
+function badge(value) { const good = ['ACTIVE', 'VERIFIED', 'SUCCESS', 'ENROLLED', 'APPROVED', 'IDENTIFIED', 'OK', 'VALID'].includes(value); const bad=['BLOCKED','REJECTED','DISABLED','DENIED','FAILED','UNKNOWN','ERROR','INVALID'].includes(value); return `<span class="badge ${good ? 'good' : bad ? 'bad' : ''}">${esc(humanCode(value,'status'))}</span>`; }
 let viewerPhotos=[];let viewerIndex=0;
 function openPhotoViewer(photoIds,index=0){viewerPhotos=photoIds.filter(Boolean);if(!viewerPhotos.length)return;viewerIndex=Math.max(0,Math.min(index,viewerPhotos.length-1));renderPhotoViewer();$('photo-viewer-dialog').showModal();}
 function renderPhotoViewer(){const id=viewerPhotos[viewerIndex];$('photo-viewer-image').src=`/api/v3/photos/${encodeURIComponent(id)}`;$('photo-viewer-image').alt=tr('photoNumber',{current:viewerIndex+1,total:viewerPhotos.length});$('photo-viewer-count').textContent=tr('photoNumber',{current:viewerIndex+1,total:viewerPhotos.length});$('photo-viewer-previous').disabled=viewerIndex===0;$('photo-viewer-next').disabled=viewerIndex===viewerPhotos.length-1;}
