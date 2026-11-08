@@ -62,7 +62,10 @@ class BiometricPipeline:
         quality = self.quality.evaluate(image, observation)
         if not quality.accepted:
             raise BiometricError(quality.reason_code, "Image quality check failed")
-        pose_reason = self.pose_gate.evaluate(observation) if enrollment else None
+        # Tilt comes from MediaPipe: YuNet's eye points barely follow a tilted head.
+        pose_reason = (
+            self.pose_gate.evaluate(observation, self.eye_geometry.roll_degrees(image)) if enrollment else None
+        )
         if pose_reason:
             raise BiometricError(pose_reason, "Look straight at the camera for enrollment")
         embedding = self.embedder.extract(image, observation)
