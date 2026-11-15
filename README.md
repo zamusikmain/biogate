@@ -389,7 +389,7 @@ CI (GitHub Actions) прогоняет всё на Windows с Python 3.11 и 3.1
 | `feature/arcface` | Сравнение с ArcFace R100 |
 | `feature/admin-login-field`, `feature/face-login-rate-limit`, `feature/persistent-login-limits` | Поле логина админа, лимиты входа по лицу, лимиты в SQLite |
 | `feature/maintenance`, `feature/remove-v2-login`, `feature/v3-admin-api`, `fix/admin-password-reset` | Обслуживание, удаление входа V2, новый admin API, исправление сброса пароля |
-| `claude/replay-pr1` | Повтор PR #1 |
+| `replay-pr1` | Повтор PR #1 |
 
 **Статус:** работает локально. FAR/FRR измерены только на LFW; для веб-камеры и 1:N цифр нет. Живость —
 демонстрация, не сертифицированный PAD. Распознавание и живость в автотестах проверяются через поддельный
@@ -801,7 +801,7 @@ temporary database). A real camera, recognition and liveness must be checked man
 | `feature/arcface` | ArcFace R100 comparison |
 | `feature/admin-login-field`, `feature/face-login-rate-limit`, `feature/persistent-login-limits` | Admin login field, face-login limits, limits in SQLite |
 | `feature/maintenance`, `feature/remove-v2-login`, `feature/v3-admin-api`, `fix/admin-password-reset` | Maintenance, V2 login removal, new admin API, password reset fix |
-| `claude/replay-pr1` | Replay of PR #1 |
+| `replay-pr1` | Replay of PR #1 |
 
 **Status:** works locally. FAR/FRR were measured only on LFW; there are no webcam or 1:N numbers. Liveness is a
 demonstration, not certified PAD. Recognition and liveness are covered in automated tests through a fake pipeline;
