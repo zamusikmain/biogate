@@ -1,6 +1,6 @@
 # Needs the owner
 
-Items Claude could not finish alone in the `polish-2` round.
+Items that could not be finished without the owner in the `polish-2` round.
 
 1. **Accept the LFW terms.** Read on 2026-11-08 through the Internet Archive copy (the site itself still
    does not load): the page has no licence, only a request to cite the 2007 technical report and a
