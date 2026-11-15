@@ -9,7 +9,7 @@ description = "Local biometric identity and access management system"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-  "fastapi==0.162.2",
+  "fastapi==0.162.5",
   # Pinned directly: fastapi accepts any starlette>=0.46, including versions with known advisories.
   "starlette==1.10.0",
   "uvicorn[standard]==0.54.0",
